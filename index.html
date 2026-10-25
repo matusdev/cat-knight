@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=contain">
+    <meta name="theme-color" content="#6fb4ee">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>Кот-рыцарь — Небесный замок</title>
+    <link rel="stylesheet" href="./public/css/style.min.css">
+  </head>
+  <body>
+    <div class="body-wrap">
+      <div class="game is-loading" id="game">
+        <svg class="game__sprite" aria-hidden="true">
+          <symbol id="paw" viewBox="0 0 24 24">
+            <ellipse cx="12" cy="15.4" rx="4.6" ry="3.9"></ellipse>
+            <ellipse cx="6.3" cy="10.6" rx="1.9" ry="2.4" transform="rotate(-24 6.3 10.6)"></ellipse>
+            <ellipse cx="9.8" cy="7.2" rx="1.9" ry="2.5" transform="rotate(-8 9.8 7.2)"></ellipse>
+            <ellipse cx="14.2" cy="7.2" rx="1.9" ry="2.5" transform="rotate(8 14.2 7.2)"></ellipse>
+            <ellipse cx="17.7" cy="10.6" rx="1.9" ry="2.4" transform="rotate(24 17.7 10.6)"></ellipse>
+          </symbol>
+        </svg>
+        <canvas class="game__canvas" id="game-canvas"></canvas>
+        <div class="game__menu-bg" aria-hidden="true">
+          <div class="game__mstage">
+            <div class="game__msky"></div>
+            <canvas class="game__misle"></canvas>
+          </div>
+        </div>
+        <div class="game__shop-bg" aria-hidden="true">
+          <div class="game__sstage">
+            <div class="game__ssky"></div>
+            <div class="game__sisle"></div>
+          </div>
+          <canvas class="game__shop-cat"></canvas>
+        </div>
+        <div class="game__vignette"></div>
+        <div class="game__speed" id="game-speed" aria-hidden="true"></div>
+        <div class="game__flyers" id="game-flyers" aria-hidden="true"></div>
+        <div class="game__wipe" id="game-wipe" aria-hidden="true"></div>
+        <div class="game__flash" id="game-flash"></div>
+        <div class="game__hud" id="game-hud">
+          <div class="game__player">
+            <div class="game__avatar" id="game-fury"></div>
+            <div class="game__hearts" id="game-hearts">
+              <svg class="game__heart" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 21.2s-7.6-4.7-9.7-9.4C.8 8.4 2.8 4.3 6.7 4.3c2.2 0 3.7 1.3 5.3 3.2 1.6-1.9 3.1-3.2 5.3-3.2 3.9 0 5.9 4.1 4.4 7.5-2.1 4.7-9.7 9.4-9.7 9.4z"></path>
+                <path class="game__heart-gloss" d="M6.4 6.6c-1.6.2-2.6 1.7-2.4 3.3.6-1.4 1.6-2.3 3-2.6z"></path>
+              </svg>
+              <svg class="game__heart" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 21.2s-7.6-4.7-9.7-9.4C.8 8.4 2.8 4.3 6.7 4.3c2.2 0 3.7 1.3 5.3 3.2 1.6-1.9 3.1-3.2 5.3-3.2 3.9 0 5.9 4.1 4.4 7.5-2.1 4.7-9.7 9.4-9.7 9.4z"></path>
+                <path class="game__heart-gloss" d="M6.4 6.6c-1.6.2-2.6 1.7-2.4 3.3.6-1.4 1.6-2.3 3-2.6z"></path>
+              </svg>
+              <svg class="game__heart" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 21.2s-7.6-4.7-9.7-9.4C.8 8.4 2.8 4.3 6.7 4.3c2.2 0 3.7 1.3 5.3 3.2 1.6-1.9 3.1-3.2 5.3-3.2 3.9 0 5.9 4.1 4.4 7.5-2.1 4.7-9.7 9.4-9.7 9.4z"></path>
+                <path class="game__heart-gloss" d="M6.4 6.6c-1.6.2-2.6 1.7-2.4 3.3.6-1.4 1.6-2.3 3-2.6z"></path>
+              </svg>
+              <svg class="game__heart" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 21.2s-7.6-4.7-9.7-9.4C.8 8.4 2.8 4.3 6.7 4.3c2.2 0 3.7 1.3 5.3 3.2 1.6-1.9 3.1-3.2 5.3-3.2 3.9 0 5.9 4.1 4.4 7.5-2.1 4.7-9.7 9.4-9.7 9.4z"></path>
+                <path class="game__heart-gloss" d="M6.4 6.6c-1.6.2-2.6 1.7-2.4 3.3.6-1.4 1.6-2.3 3-2.6z"></path>
+              </svg>
+            </div>
+          </div>
+          <div class="game__right">
+            <div class="game__coins" id="game-coins">
+              <div class="game__medal">
+                <svg class="game__ring" viewBox="0 0 40 40" aria-hidden="true">
+                  <circle class="game__ring-seg" cx="20" cy="20" r="18" transform="rotate(-84 20 20)"></circle>
+                  <circle class="game__ring-seg" cx="20" cy="20" r="18" transform="rotate(36 20 20)"></circle>
+                  <circle class="game__ring-seg" cx="20" cy="20" r="18" transform="rotate(156 20 20)"></circle>
+                </svg><i class="game__coin">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#paw"></use>
+                  </svg></i><b class="game__mult" id="game-combo-x">×1</b>
+                <svg class="game__combo-shield" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 3h16v8c0 5.5-3.6 8.6-8 10.5C7.6 19.6 4 16.5 4 11z"></path>
+                </svg>
+              </div><span class="game__coins-num" id="game-coin-count">0</span>
+            </div>
+            <button class="game__pause" id="game-pause" type="button" data-i18n-label="ui.pause" aria-label="Пауза"><i></i><i></i></button>
+          </div>
+          <div class="game__height" id="game-height"><span id="game-meters">0</span><small data-i18n="unit.m">м</small></div>
+          <div class="game__buffs" id="game-buffs"></div>
+          <div class="game__boss" id="game-boss">
+            <div class="game__boss-name" id="game-boss-name" data-i18n="boss.dragon">Пламенный дракон</div>
+            <div class="game__boss-bar"><i id="game-boss-fill"></i></div>
+          </div>
+        </div>
+        <div class="game__pop" id="game-pop"><b id="game-pop-main"></b><small id="game-pop-sub"></small></div>
+        <div class="game__toast" id="game-toast"></div>
+        <div class="game__pads" aria-hidden="true">
+          <button class="game__pad game__pad--trick" id="game-btn-trick" type="button" data-i18n-label="ui.trick" aria-label="Трюк">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 4a8 8 0 1 1-7.4 5" fill="none" stroke-width="2.6" stroke-linecap="round"></path>
+              <path d="M2.6 4.6l2.2 4.6 4.7-2"></path>
+            </svg>
+            <svg class="game__pad-jump" viewBox="0 0 24 24">
+              <path d="M12 4l7 7h-4.5v9h-5v-9H5z"></path>
+            </svg>
+          </button>
+          <button class="game__pad game__pad--slide" id="game-btn-slide" type="button" data-i18n-label="ui.slide" aria-label="Подкат">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 20l-7-7h4.5V4h5v9H19z"></path>
+            </svg>
+          </button>
+          <button class="game__pad game__pad--sword" id="game-btn-sword" type="button" data-i18n-label="ui.sword" aria-label="Удар мечом">
+            <svg viewBox="0 0 24 24">
+              <path d="M19.5 2.5l-1.2 5.3-9.6 9.6-2.4-2.4 9.6-9.6z"></path>
+              <path d="M5.2 13.4l5.4 5.4-1.4 1.4-1.6-1.6-2.9 2.9-1.4-1.4 2.9-2.9-1.6-1.6z"></path>
+            </svg>
+          </button>
+        </div>
+        <div class="game__coach" id="game-coach">
+          <div class="game__coach-card">
+            <div class="game__coach-demo"><i class="game__coach-hand"></i></div>
+            <p class="game__coach-text" id="game-coach-text"></p>
+            <div class="game__coach-dots" id="game-coach-dots"></div>
+            <button class="game__btn game__coach-next" id="game-coach-next" type="button" data-i18n="coach.next">Дальше</button>
+          </div>
+        </div>
+        <div class="game__hint" id="game-hint"><i class="game__hint-arrow game__hint-arrow--left"></i><span id="game-hint-text">Наклоняй телефон</span><i class="game__hint-arrow game__hint-arrow--right"></i></div>
+        <div class="game__shade"></div>
+        <div class="game__rotate"><i></i><span data-i18n="ui.rotate">Поверни телефон вертикально</span></div>
+        <div class="game__screen game__screen--start">
+          <div class="game__corner game__corner--left">
+            <button class="game__wallet" id="game-wallet-btn" type="button" data-i18n-label="shop.title" aria-label="Лавка"><span id="game-wallet">0</span></button>
+            <button class="game__icon-btn game__icon-btn--cart" id="game-open-shop" type="button" data-i18n-label="shop.title" aria-label="Лавка"></button>
+            <button class="game__icon-btn game__icon-btn--quests" id="game-open-quests" type="button" data-i18n-label="quests.title" aria-label="Задания"><b class="game__badge" id="game-quest-badge"></b></button>
+          </div>
+          <div class="game__corner game__corner--right">
+            <button class="game__icon-btn game__icon-btn--gear" id="game-open-settings" type="button" data-i18n-label="set.title" aria-label="Настройки"></button>
+          </div>
+          <div class="game__logo" role="img" data-i18n-label="logo" aria-label="Кот-рыцарь"></div>
+          <nav class="game__menu">
+            <button class="game__mbtn game__mbtn--play" id="game-play" type="button"><span data-i18n="start.play">Играть</span></button>
+            <div class="game__seg game__modes" id="game-modes">
+              <button type="button" data-v="run" data-i18n="style.run">Бег</button>
+              <button type="button" data-v="mix" data-i18n="style.mix">Смешанный</button>
+              <button type="button" data-v="hop" data-i18n="style.hop">Прыжки</button>
+            </div>
+            <div class="game__menu-row">
+              <button class="game__mbtn game__mbtn--looks" id="game-open-looks" type="button"><span data-i18n="menu.looks">Облик</span></button>
+              <button class="game__mbtn game__mbtn--levels" id="game-quest" type="button"><span data-i18n="menu.levels">Уровни</span><b class="game__mbtn-sub" id="game-quest-stars"></b></button>
+              <button class="game__mbtn game__mbtn--codex" id="game-open-codex" type="button"><span data-i18n="menu.codex">Справочник</span><b class="game__badge" id="game-codex-badge"></b></button>
+            </div>
+          </nav>
+          <div class="game__qcard" id="game-qcard"><b class="game__qcard-tag" id="game-qcard-tag">1-1</b>
+            <div class="game__qcard-title" id="game-qcard-title"></div>
+            <div class="game__qcard-pic" aria-hidden="true"></div>
+            <p class="game__qcard-text" id="game-qcard-text"></p>
+            <div class="game__qcard-head"><span data-i18n="qcard.rewards">Награды</span></div>
+            <div class="game__qcard-rewards">
+              <div class="game__reward"><i class="game__reward-coin" aria-hidden="true"></i><b id="game-qcard-coins"></b></div>
+              <div class="game__reward"><i class="game__reward-star" aria-hidden="true">★</i><b id="game-qcard-stars"></b></div>
+              <div class="game__reward"><i class="game__reward-flag" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M5 2.5h1.8v19H5zM7.6 3.5h11.2l-3 4.2 3 4.3H7.6z"></path>
+                  </svg></i><b id="game-qcard-len"></b></div>
+            </div>
+            <button class="game__btn game__qcard-play" id="game-qcard-play" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <use href="#paw"></use>
+              </svg><span data-i18n="start.play">Играть</span>
+            </button>
+          </div>
+          <div class="game__progress">
+            <div class="game__progress-body"><span data-i18n="menu.progress">Твой прогресс</span>
+              <div class="game__progress-bar"><i id="game-progress-fill"></i></div>
+            </div><b id="game-progress-num">0/35</b>
+          </div>
+          <div class="game__best" id="game-best"></div>
+          <p class="game__start-note" id="game-start-text"></p>
+        </div>
+        <div class="game__screen game__screen--pause">
+          <div class="game__card">
+            <div class="game__card-title" data-i18n="ui.pause">Пауза</div>
+            <button class="game__btn" id="game-resume" type="button" data-i18n="ui.resume">Продолжить</button>
+            <div class="game__row">
+              <button class="game__btn game__btn--ghost game__sound" id="game-sound" type="button" data-i18n-label="ui.sound" aria-label="Звук">
+                <svg class="game__sound-on" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 9h4l5-4v14l-5-4H4z"></path>
+                  <path d="M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12" fill="none" stroke-width="2" stroke-linecap="round"></path>
+                </svg>
+                <svg class="game__sound-off" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M4 9h4l5-4v14l-5-4H4z"></path>
+                  <path d="M16.5 9.5l5 5M21.5 9.5l-5 5" fill="none" stroke-width="2" stroke-linecap="round"></path>
+                </svg><span data-i18n="ui.sound">Звук</span>
+              </button>
+              <button class="game__btn game__btn--ghost" id="game-restart" type="button" data-i18n="ui.restart">Заново</button>
+            </div>
+            <button class="game__btn game__btn--ghost game__to-map" id="game-pause-map" type="button" data-i18n="ui.map">Карта</button>
+            <button class="game__btn game__btn--ghost game__to-settings" id="game-pause-settings" type="button" data-i18n="set.title">Настройки</button>
+            <button class="game__btn game__btn--ghost" id="game-pause-menu" type="button" data-i18n="ui.menu">В меню</button>
+          </div>
+        </div>
+        <div class="game__screen game__screen--settings">
+          <div class="game__card game__settings">
+            <div class="game__card-title" data-i18n="set.title">Настройки</div>
+            <div class="game__set-row"><span data-i18n="set.lang">Язык</span>
+              <div class="game__seg" id="game-set-lang">
+                <button type="button" data-v="ru">Русский</button>
+                <button type="button" data-v="en">English</button>
+              </div>
+            </div>
+            <label class="game__set-row"><span data-i18n="set.sfx">Звуки</span>
+              <input class="game__range" id="game-set-sfx" type="range" min="0" max="100">
+            </label>
+            <label class="game__set-row"><span data-i18n="set.music">Музыка</span>
+              <input class="game__range" id="game-set-music" type="range" min="0" max="100">
+            </label>
+            <div class="game__set-group">
+              <div class="game__set-row"><span data-i18n="set.track">Мелодия</span>
+                <button class="game__btn game__btn--ghost game__set-track" id="game-set-track" type="button"></button>
+              </div>
+              <p class="game__set-credits" id="game-set-credits"></p>
+            </div>
+            <label class="game__set-row"><span data-i18n="set.tilt">Чуткость наклона</span>
+              <input class="game__range" id="game-set-tilt" type="range" min="0" max="100">
+            </label>
+            <div class="game__set-row"><span data-i18n="set.vibro">Вибрация</span>
+              <button class="game__switch" id="game-set-vibro" type="button" role="switch"></button>
+            </div>
+            <div class="game__set-row"><span data-i18n="set.lefty">Кнопки для левши</span>
+              <button class="game__switch" id="game-set-lefty" type="button" role="switch"></button>
+            </div>
+            <div class="game__set-row"><span data-i18n="set.calm">Меньше вспышек</span>
+              <button class="game__switch" id="game-set-calm" type="button" role="switch"></button>
+            </div>
+            <div class="game__set-row"><span data-i18n="set.quality">Графика</span>
+              <div class="game__seg" id="game-set-quality">
+                <button type="button" data-v="auto" data-i18n="set.q.auto">Авто</button>
+                <button type="button" data-v="high" data-i18n="set.q.high">Красиво</button>
+                <button type="button" data-v="low" data-i18n="set.q.low">Экономно</button>
+              </div>
+            </div>
+            <div class="game__row">
+              <button class="game__btn game__btn--ghost" id="game-set-coach" type="button" data-i18n="set.coach">Как играть</button>
+              <button class="game__btn" id="game-set-done" type="button" data-i18n="set.done">Готово</button>
+            </div>
+            <p class="game__set-credits game__set-id" id="game-set-id"></p>
+          </div>
+        </div>
+        <div class="game__screen game__screen--over">
+          <div class="game__card">
+            <div class="game__card-title" data-i18n="over.title">Кот упал!</div>
+            <div class="game__record" id="game-record" data-i18n="over.record">Новый рекорд!</div>
+            <div class="game__stats">
+              <div class="game__stat"><b id="game-over-meters">0</b><span data-i18n="over.dist">дистанция, м</span></div>
+              <div class="game__stat"><b id="game-over-coins">0</b><span data-i18n="over.coins">монеты</span></div>
+            </div>
+            <p class="game__text game__text--small game__over-wallet" id="game-over-wallet"></p>
+            <p class="game__text game__text--small" id="game-over-combo"></p>
+            <p class="game__text game__text--small" id="game-over-best"></p>
+            <button class="game__btn" id="game-again" type="button" data-i18n="ui.again">Ещё раз</button>
+            <button class="game__btn game__btn--ghost game__to-map" id="game-over-map" type="button" data-i18n="ui.map">Карта</button>
+            <button class="game__btn game__btn--ghost" id="game-over-menu" type="button" data-i18n="ui.menu">В меню</button>
+            <button class="game__link" id="game-cta" type="button" data-i18n-html="ui.cta">Играть в&nbsp;полную версию</button>
+          </div>
+        </div>
+        <div class="game__screen game__screen--daily">
+          <div class="game__card game__daily">
+            <div class="game__card-title" data-i18n="daily.title">Награда за вход</div>
+            <p class="game__text game__text--small" data-i18n="daily.text">Заходи каждый день — награда растёт</p>
+            <div class="game__days" id="game-days"></div>
+            <div class="game__chest" id="game-chest" aria-hidden="true"><i class="game__chest-lid"></i><i class="game__chest-box"></i></div>
+            <p class="game__daily-got" id="game-daily-got"></p>
+            <button class="game__btn" id="game-daily-claim" type="button" data-i18n="daily.claim">Забрать</button>
+          </div>
+        </div>
+        <div class="game__screen game__screen--save">
+          <div class="game__card game__save">
+            <div class="game__card-title" data-i18n="save.title">Спасти забег?</div>
+            <div class="game__save-ring" id="game-save-ring"><b id="game-save-left">5</b></div>
+            <button class="game__btn" id="game-save-coins" type="button"></button>
+            <button class="game__btn game__btn--ghost" id="game-save-ad" type="button" data-i18n="save.ad">Смотреть рекламу</button>
+            <button class="game__btn game__btn--ghost" id="game-save-no" type="button" data-i18n="save.no">Нет, спасибо</button>
+          </div>
+        </div>
+        <div class="game__screen game__screen--shop">
+          <div class="game__map game__shop">
+            <div class="game__map-head">
+              <button class="game__back game__close" type="button" data-i18n-label="ui.back" aria-label="Назад"></button>
+              <div class="game__map-title" data-i18n="shop.title">Лавка</div>
+              <div class="game__map-stars game__wallet-mini"><i class="game__coin">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#paw"></use>
+                  </svg></i><span class="game__wallet-num">0</span></div>
+            </div>
+            <div class="game__tabs" id="game-shop-tabs">
+              <button class="is-on" type="button" data-tab="look">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M8.5 3l3.5 2 3.5-2 5.5 3-1.6 4.6-2.4-.9V21H6.9V9.7l-2.4.9L3 6z"></path>
+                </svg><span data-i18n="shop.look">Облик</span>
+              </button>
+              <button type="button" data-tab="up">
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z"></path>
+                </svg><span data-i18n="shop.up">Улучшения</span>
+              </button>
+            </div>
+            <div class="game__worlds" id="game-shop-list"></div>
+          </div>
+        </div>
+        <div class="game__screen game__screen--quests">
+          <div class="game__map game__quests">
+            <div class="game__map-head">
+              <button class="game__back game__close" type="button" data-i18n-label="ui.back" aria-label="Назад"></button>
+              <div class="game__map-title" data-i18n="quests.title">Задания</div>
+              <div class="game__map-stars game__wallet-mini"><i class="game__coin">
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <use href="#paw"></use>
+                  </svg></i><span class="game__wallet-num">0</span></div>
+            </div>
+            <div class="game__tabs" id="game-quest-tabs">
+              <button class="is-on" type="button" data-tab="day" data-i18n="quests.day">На сегодня</button>
+              <button type="button" data-tab="ach" data-i18n="quests.ach">Достижения</button>
+              <button type="button" data-tab="run" data-i18n="quests.run">Забег дня</button>
+            </div>
+            <div class="game__worlds" id="game-quest-list"></div>
+          </div>
+        </div>
+        <div class="game__screen game__screen--codex">
+          <div class="game__map game__codex">
+            <div class="game__map-head">
+              <button class="game__back game__close" type="button" data-i18n-label="ui.back" aria-label="Назад"></button>
+              <div class="game__map-title" data-i18n="cx.title">Справочник</div>
+              <div class="game__map-stars" id="game-codex-count"></div>
+            </div>
+            <div class="game__tabs" id="game-codex-tabs">
+              <button class="is-on" type="button" data-tab="boss" data-i18n="cx.boss">Боссы</button>
+              <button type="button" data-tab="foe" data-i18n="cx.foe">Враги</button>
+              <button type="button" data-tab="trap" data-i18n="cx.trap">Ловушки</button>
+              <button type="button" data-tab="bonus" data-i18n="cx.bonus">Бонусы</button>
+            </div>
+            <div class="game__worlds game__codex-list" id="game-codex-list"></div>
+          </div>
+        </div>
+        <div class="game__screen game__screen--map">
+          <div class="game__map">
+            <div class="game__map-head">
+              <button class="game__back" id="game-map-back" type="button" data-i18n-label="ui.back" aria-label="Назад"></button>
+              <div class="game__map-title" data-i18n="map.title">Дорога к Небесному замку</div>
+              <div class="game__map-stars" id="game-map-stars"></div>
+            </div>
+            <div class="game__worlds" id="game-worlds"></div>
+          </div>
+        </div>
+        <div class="game__screen game__screen--win">
+          <div class="game__card">
+            <div class="game__card-title" id="game-win-title"></div>
+            <div class="game__win-stars">
+              <svg class="game__win-star" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"></path>
+              </svg>
+              <svg class="game__win-star" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"></path>
+              </svg>
+              <svg class="game__win-star" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"></path>
+              </svg>
+            </div>
+            <p class="game__text game__text--small" id="game-win-text"></p>
+            <button class="game__btn" id="game-next" type="button" data-i18n="win.next">Дальше</button>
+            <div class="game__row">
+              <button class="game__btn game__btn--ghost" id="game-win-again" type="button" data-i18n="ui.again">Ещё раз</button>
+              <button class="game__btn game__btn--ghost" id="game-win-map" type="button" data-i18n="ui.map">Карта</button>
+            </div>
+          </div>
+        </div>
+        <div class="game__loader" aria-hidden="true">
+          <div class="game__loader-sky"></div>
+          <div class="game__loader-clouds"><i></i><i></i></div>
+          <div class="game__loader-body">
+            <div class="game__loader-logo"></div>
+            <div class="game__loader-bar">
+              <div class="game__loader-track"><i id="game-progress"></i></div>
+              <div class="game__loader-ride" id="game-progress-ride"><i class="game__coin game__loader-coin">
+                  <svg viewBox="0 0 24 24">
+                    <use href="#paw"></use>
+                  </svg></i></div>
+              <svg class="game__loader-goal" viewBox="0 0 40 40">
+                <path class="game__loader-stone" d="M7 38V20h4v-3h3v3h3V13h6v7h3v-3h3v3h4v18z"></path>
+                <path class="game__loader-roof" d="M6.5 20L9 13l2.5 7zM17 13l3-9 3 9zM28.5 20L31 13l2.5 7z"></path>
+                <path class="game__loader-gate" d="M17.5 38v-6a2.5 2.5 0 0 1 5 0v6z"></path>
+                <path class="game__loader-flag" d="M20 4V0.8l4.6 1.4L20 3.6z"></path>
+              </svg>
+            </div>
+            <div class="game__loader-text" data-i18n="ui.loading">Загрузка</div>
+          </div>
+          <div class="game__loader-tip" id="game-loader-tip"></div>
+        </div>
+      </div>
+    </div>
+    <script src="./public/js/main.min.js"></script>
+  </body>
+</html>

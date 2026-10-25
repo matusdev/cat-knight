@@ -1,0 +1,12 @@
+$browser-context: 16;
+
+@function em($pixels, $context: $browser-context) {
+  @return #{calc($pixels/$context)}em;
+}
+@function rem($pixels, $context: $browser-context) {
+  @return #{calc($pixels/$context)}rem;
+}
+
+@function vp($context: 1920, $pixels: $browser-context) {
+  @return calc($pixels/($context / 100) * 1vw);
+}

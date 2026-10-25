@@ -1,0 +1,408 @@
+- var title = "Кот-рыцарь — Небесный замок";
+doctype html
+html(lang='ru')
+	include includes/head
+	body
+		.body-wrap
+			.game.is-loading#game
+				//- значок лапки: монета в HUD, кнопка «Играть», лапки на заставке
+				svg.game__sprite(aria-hidden='true')
+					symbol#paw(viewBox='0 0 24 24')
+						ellipse(cx='12' cy='15.4' rx='4.6' ry='3.9')
+						ellipse(cx='6.3' cy='10.6' rx='1.9' ry='2.4' transform='rotate(-24 6.3 10.6)')
+						ellipse(cx='9.8' cy='7.2' rx='1.9' ry='2.5' transform='rotate(-8 9.8 7.2)')
+						ellipse(cx='14.2' cy='7.2' rx='1.9' ry='2.5' transform='rotate(8 14.2 7.2)')
+						ellipse(cx='17.7' cy='10.6' rx='1.9' ry='2.4' transform='rotate(24 17.7 10.6)')
+
+				//- 3D-сцена (three.js): дорога из островов, замок, кот
+				canvas.game__canvas#game-canvas
+				//- фон меню — слои из макета: небо с дальними островами и замком (чуть сдвигается за пальцем, мышью или наклоном) и,
+				//- ближе, островок с котом — живой (canvas, menuisle.js): кот смотрит на курсор, знамёна развеваются. Пока фон виден, 3D не рисуется
+				.game__menu-bg(aria-hidden='true')
+					.game__mstage
+						.game__msky
+						canvas.game__misle
+				//- фон лавки — из макета: небо и островок с шатром, хоругвями и постаментом (нарисованного кота нет); на ковре — 3D-кот
+				//- игры на своём прозрачном canvas, с тенью (frameShowroom ставит его лапы в середину ковра). Пока фон виден, мир не рисуется
+				.game__shop-bg(aria-hidden='true')
+					.game__sstage
+						.game__ssky
+						.game__sisle
+					canvas.game__shop-cat
+				.game__vignette
+				//- штрихи скорости по краям (полёт, ярость, самый разгон) и монеты, летящие в счётчик (speedFx, flyCoin)
+				.game__speed#game-speed(aria-hidden='true')
+				.game__flyers#game-flyers(aria-hidden='true')
+				//- переход между экранами: облачная вспышка из середины (wipe)
+				.game__wipe#game-wipe(aria-hidden='true')
+				//- вспышка молнии (гроза в призрачных руинах и цитадели)
+				.game__flash#game-flash
+
+				//- HUD: аватар и жизни слева, монеты и пауза справа, дистанция под ними
+				.game__hud#game-hud
+					.game__player
+						//- рамка аватара — шкала «Рыцарской ярости»: копится от серии по кругу, полная — ярость
+						.game__avatar#game-fury
+						.game__hearts#game-hearts
+							//- четвёртое — с улучшением лавки «жизнь сверху» (без него скрыто, .is-off)
+							- for (var i = 0; i < 4; i++)
+								svg.game__heart(viewBox='0 0 24 24' aria-hidden='true')
+									path(d='M12 21.2s-7.6-4.7-9.7-9.4C.8 8.4 2.8 4.3 6.7 4.3c2.2 0 3.7 1.3 5.3 3.2 1.6-1.9 3.1-3.2 5.3-3.2 3.9 0 5.9 4.1 4.4 7.5-2.1 4.7-9.7 9.4-9.7 9.4z')
+									path.game__heart-gloss(d='M6.4 6.6c-1.6.2-2.6 1.7-2.4 3.3.6-1.4 1.6-2.3 3-2.6z')
+					.game__right
+						//- монеты и серия: кольцо вокруг монетки — огоньки до следующего множителя (их CONFIG.combo.step),
+						//- бейдж «×N» — множитель, синий щит — щит серии
+						.game__coins#game-coins
+							.game__medal
+								svg.game__ring(viewBox='0 0 40 40' aria-hidden='true')
+									- for (var i = 0; i < 3; i++)
+										circle.game__ring-seg(cx='20' cy='20' r='18' transform='rotate(' + (-84 + i * 120) + ' 20 20)')
+								i.game__coin
+									svg(viewBox='0 0 24 24' aria-hidden='true')
+										use(href='#paw')
+								b.game__mult#game-combo-x ×1
+								svg.game__combo-shield(viewBox='0 0 24 24' aria-hidden='true')
+									path(d='M4 3h16v8c0 5.5-3.6 8.6-8 10.5C7.6 19.6 4 16.5 4 11z')
+							span.game__coins-num#game-coin-count 0
+						button.game__pause#game-pause(type='button' data-i18n-label='ui.pause' aria-label='Пауза')
+							i
+							i
+					.game__height#game-height
+						span#game-meters 0
+						small(data-i18n='unit.m') м
+					//- активные бонусы: магнит и монеты ×2 — с оставшимся временем, пузырь — значок
+					.game__buffs#game-buffs
+					//- здоровье Пламенного дракона — видно, пока идёт бой
+					.game__boss#game-boss
+						.game__boss-name#game-boss-name(data-i18n='boss.dragon') Пламенный дракон
+						.game__boss-bar
+							i#game-boss-fill
+
+				//- «Точно!» над котом после точного приземления, мелкой строкой — бонусы
+				.game__pop#game-pop
+					b#game-pop-main
+					small#game-pop-sub
+
+				.game__toast#game-toast
+
+				//- Кнопки на телефоне: трюк (слева) и меч (справа); левше — наоборот (настройки)
+				.game__pads(aria-hidden='true')
+					button.game__pad.game__pad--trick#game-btn-trick(type='button' data-i18n-label='ui.trick' aria-label='Трюк')
+						svg(viewBox='0 0 24 24')
+							path(d='M12 4a8 8 0 1 1-7.4 5' fill='none' stroke-width='2.6' stroke-linecap='round')
+							path(d='M2.6 4.6l2.2 4.6 4.7-2')
+						svg.game__pad-jump(viewBox='0 0 24 24')
+							path(d='M12 4l7 7h-4.5v9h-5v-9H5z')
+					//- подкат — только на виадуке (режимы «Бег» и «Смешанный»)
+					button.game__pad.game__pad--slide#game-btn-slide(type='button' data-i18n-label='ui.slide' aria-label='Подкат')
+						svg(viewBox='0 0 24 24')
+							path(d='M12 20l-7-7h4.5V4h5v9H19z')
+					button.game__pad.game__pad--sword#game-btn-sword(type='button' data-i18n-label='ui.sword' aria-label='Удар мечом')
+						svg(viewBox='0 0 24 24')
+							path(d='M19.5 2.5l-1.2 5.3-9.6 9.6-2.4-2.4 9.6-9.6z')
+							path(d='M5.2 13.4l5.4 5.4-1.4 1.4-1.6-1.6-2.9 2.9-1.4-1.4 2.9-2.9-1.6-1.6z')
+
+				//- Обучение при первом запуске: рука показывает жест, подпись — что он делает
+				.game__coach#game-coach
+					.game__coach-card
+						.game__coach-demo
+							i.game__coach-hand
+						p.game__coach-text#game-coach-text
+						.game__coach-dots#game-coach-dots
+						button.game__btn.game__coach-next#game-coach-next(type='button' data-i18n='coach.next') Дальше
+
+				//- Подсказка в первые секунды игры
+				.game__hint#game-hint
+					i.game__hint-arrow.game__hint-arrow--left
+					span#game-hint-text Наклоняй телефон
+					i.game__hint-arrow.game__hint-arrow--right
+
+				.game__shade
+
+				//- телефон боком — просим повернуть: игра вертикальная
+				.game__rotate
+					i
+					span(data-i18n='ui.rotate') Поверни телефон вертикально
+
+				//- Меню — слои и плашки из макета (12.png). За ним — витрина (3D-кот, лавка). Слева кошелёк, корзина и задания,
+				//- справа шестерёнка; сверху логотип; меню (Играть, Облик, Уровни, Настройки, режим) — слева, на телефоне внизу;
+				//- карточка похода — справа, на телефоне полосой над «Играть»; прогресс похода и рекорд — по нижним углам
+				.game__screen.game__screen--start
+					//- угловые кнопки: картинки из макета, наши — только число монет и значок заданий
+					.game__corner.game__corner--left
+						button.game__wallet#game-wallet-btn(type='button' data-i18n-label='shop.title' aria-label='Лавка')
+							span#game-wallet 0
+						button.game__icon-btn.game__icon-btn--cart#game-open-shop(type='button' data-i18n-label='shop.title' aria-label='Лавка')
+						button.game__icon-btn.game__icon-btn--quests#game-open-quests(type='button' data-i18n-label='quests.title' aria-label='Задания')
+							b.game__badge#game-quest-badge
+					.game__corner.game__corner--right
+						button.game__icon-btn.game__icon-btn--gear#game-open-settings(type='button' data-i18n-label='set.title' aria-label='Настройки')
+					//- логотип — целиком из макета: дощечка в каменной оправе, надпись Cat Knight, корона, щит на лентах, плющ
+					.game__logo(role='img' data-i18n-label='logo' aria-label='Кот-рыцарь')
+
+					//- меню: кнопки — плашки из макета (медальон с картинкой слева), подписи свои; на телефоне «Облик · Уровни ·
+					//- Настройки» — медальонами в ряд. Режим забега — под кнопками (на широком экране) или под «Играть» (телефон)
+					nav.game__menu
+						button.game__mbtn.game__mbtn--play#game-play(type='button')
+							span(data-i18n='start.play') Играть
+						//- режим забега: бег по виадуку, смешанный (по умолчанию), прыжки по островам
+						.game__seg.game__modes#game-modes
+							button(type='button' data-v='run' data-i18n='style.run') Бег
+							button(type='button' data-v='mix' data-i18n='style.mix') Смешанный
+							button(type='button' data-v='hop' data-i18n='style.hop') Прыжки
+						.game__menu-row
+							button.game__mbtn.game__mbtn--looks#game-open-looks(type='button')
+								span(data-i18n='menu.looks') Облик
+							//- кампания: карта миров и уровней
+							button.game__mbtn.game__mbtn--levels#game-quest(type='button')
+								span(data-i18n='menu.levels') Уровни
+								b.game__mbtn-sub#game-quest-stars
+							//- справочник: боссы, враги, ловушки, бонусы (renderCodex); бейдж — сколько новых записей
+							button.game__mbtn.game__mbtn--codex#game-open-codex(type='button')
+								span(data-i18n='menu.codex') Справочник
+								b.game__badge#game-codex-badge
+
+					//- карточка похода: рамка, бирка, разделитель, монета и кнопка — из макета; наполняет renderQuestCard
+					.game__qcard#game-qcard
+						b.game__qcard-tag#game-qcard-tag 1-1
+						.game__qcard-title#game-qcard-title
+						.game__qcard-pic(aria-hidden='true')
+						p.game__qcard-text#game-qcard-text
+						.game__qcard-head
+							span(data-i18n='qcard.rewards') Награды
+						.game__qcard-rewards
+							.game__reward
+								i.game__reward-coin(aria-hidden='true')
+								b#game-qcard-coins
+							.game__reward
+								i.game__reward-star(aria-hidden='true') ★
+								b#game-qcard-stars
+							.game__reward
+								i.game__reward-flag(aria-hidden='true')
+									svg(viewBox='0 0 24 24')
+										path(d='M5 2.5h1.8v19H5zM7.6 3.5h11.2l-3 4.2 3 4.3H7.6z')
+								b#game-qcard-len
+						button.game__btn.game__qcard-play#game-qcard-play(type='button')
+							svg(viewBox='0 0 24 24' aria-hidden='true')
+								use(href='#paw')
+							span(data-i18n='start.play') Играть
+
+					//- прогресс похода (пройдено уровней; мордочка кота — на плашке) и рекорд дистанции в выбранном режиме
+					.game__progress
+						.game__progress-body
+							span(data-i18n='menu.progress') Твой прогресс
+							.game__progress-bar
+								i#game-progress-fill
+						b#game-progress-num 0/35
+					.game__best#game-best
+					//- без WebGL — объяснение вместо кнопок
+					p.game__start-note#game-start-text
+
+				//- Пауза
+				.game__screen.game__screen--pause
+					.game__card
+						.game__card-title(data-i18n='ui.pause') Пауза
+						button.game__btn#game-resume(type='button' data-i18n='ui.resume') Продолжить
+						.game__row
+							button.game__btn.game__btn--ghost.game__sound#game-sound(type='button' data-i18n-label='ui.sound' aria-label='Звук')
+								svg.game__sound-on(viewBox='0 0 24 24' aria-hidden='true')
+									path(d='M4 9h4l5-4v14l-5-4H4z')
+									path(d='M16 8.5a5 5 0 0 1 0 7M18.5 6a8.5 8.5 0 0 1 0 12' fill='none' stroke-width='2' stroke-linecap='round')
+								svg.game__sound-off(viewBox='0 0 24 24' aria-hidden='true')
+									path(d='M4 9h4l5-4v14l-5-4H4z')
+									path(d='M16.5 9.5l5 5M21.5 9.5l-5 5' fill='none' stroke-width='2' stroke-linecap='round')
+								span(data-i18n='ui.sound') Звук
+							button.game__btn.game__btn--ghost#game-restart(type='button' data-i18n='ui.restart') Заново
+						button.game__btn.game__btn--ghost.game__to-map#game-pause-map(type='button' data-i18n='ui.map') Карта
+						button.game__btn.game__btn--ghost.game__to-settings#game-pause-settings(type='button' data-i18n='set.title') Настройки
+						button.game__btn.game__btn--ghost#game-pause-menu(type='button' data-i18n='ui.menu') В меню
+
+				//- Настройки: язык, громкость, вибрация, наклон, левша, графика, обучение
+				.game__screen.game__screen--settings
+					.game__card.game__settings
+						.game__card-title(data-i18n='set.title') Настройки
+						.game__set-row
+							span(data-i18n='set.lang') Язык
+							.game__seg#game-set-lang
+								button(type='button' data-v='ru') Русский
+								button(type='button' data-v='en') English
+						label.game__set-row
+							span(data-i18n='set.sfx') Звуки
+							input.game__range#game-set-sfx(type='range' min='0' max='100')
+						label.game__set-row
+							span(data-i18n='set.music') Музыка
+							input.game__range#game-set-music(type='range' min='0' max='100')
+						//- мелодия: генеративная или трек; нажатие — следующая, сразу звучит. Автор трека — в той же строке, под ней
+						.game__set-group
+							.game__set-row
+								span(data-i18n='set.track') Мелодия
+								button.game__btn.game__btn--ghost.game__set-track#game-set-track(type='button')
+							p.game__set-credits#game-set-credits
+						label.game__set-row
+							span(data-i18n='set.tilt') Чуткость наклона
+							input.game__range#game-set-tilt(type='range' min='0' max='100')
+						.game__set-row
+							span(data-i18n='set.vibro') Вибрация
+							button.game__switch#game-set-vibro(type='button' role='switch')
+						.game__set-row
+							span(data-i18n='set.lefty') Кнопки для левши
+							button.game__switch#game-set-lefty(type='button' role='switch')
+						//- меньше вспышек: молнии, иней метели, вспышки босса и ярости — приглушены (доступность)
+						.game__set-row
+							span(data-i18n='set.calm') Меньше вспышек
+							button.game__switch#game-set-calm(type='button' role='switch')
+						.game__set-row
+							span(data-i18n='set.quality') Графика
+							.game__seg#game-set-quality
+								button(type='button' data-v='auto' data-i18n='set.q.auto') Авто
+								button(type='button' data-v='high' data-i18n='set.q.high') Красиво
+								button(type='button' data-v='low' data-i18n='set.q.low') Экономно
+						.game__row
+							button.game__btn.game__btn--ghost#game-set-coach(type='button' data-i18n='set.coach') Как играть
+							button.game__btn#game-set-done(type='button' data-i18n='set.done') Готово
+						//- номер установки — для поддержки и запроса на удаление статистики (политика конфиденциальности)
+						p.game__set-credits.game__set-id#game-set-id
+
+				//- Финал: кот упал без жизней
+				.game__screen.game__screen--over
+					.game__card
+						.game__card-title(data-i18n='over.title') Кот упал!
+						.game__record#game-record(data-i18n='over.record') Новый рекорд!
+						.game__stats
+							.game__stat
+								b#game-over-meters 0
+								span(data-i18n='over.dist') дистанция, м
+							.game__stat
+								b#game-over-coins 0
+								span(data-i18n='over.coins') монеты
+						p.game__text.game__text--small.game__over-wallet#game-over-wallet
+						p.game__text.game__text--small#game-over-combo
+						p.game__text.game__text--small#game-over-best
+						button.game__btn#game-again(type='button' data-i18n='ui.again') Ещё раз
+						button.game__btn.game__btn--ghost.game__to-map#game-over-map(type='button' data-i18n='ui.map') Карта
+						button.game__btn.game__btn--ghost#game-over-menu(type='button' data-i18n='ui.menu') В меню
+						button.game__link#game-cta(type='button' data-i18n-html='ui.cta') Играть в&nbsp;полную версию
+
+				//- Награда за вход: семь дней по кругу, день 4 и 7 — сундук; сундук открывается тут же (renderDaily, claimDaily)
+				.game__screen.game__screen--daily
+					.game__card.game__daily
+						.game__card-title(data-i18n='daily.title') Награда за вход
+						p.game__text.game__text--small(data-i18n='daily.text') Заходи каждый день — награда растёт
+						.game__days#game-days
+						.game__chest#game-chest(aria-hidden='true')
+							i.game__chest-lid
+							i.game__chest-box
+						p.game__daily-got#game-daily-got
+						button.game__btn#game-daily-claim(type='button' data-i18n='daily.claim') Забрать
+
+				//- Спасти забег: продолжить с одной жизнью за монеты (в приложении — за рекламу); кольцо — отсчёт (offerSave)
+				.game__screen.game__screen--save
+					.game__card.game__save
+						.game__card-title(data-i18n='save.title') Спасти забег?
+						.game__save-ring#game-save-ring
+							b#game-save-left 5
+						button.game__btn#game-save-coins(type='button')
+						button.game__btn.game__btn--ghost#game-save-ad(type='button' data-i18n='save.ad') Смотреть рекламу
+						button.game__btn.game__btn--ghost#game-save-no(type='button' data-i18n='save.no') Нет, спасибо
+
+				//- Лавка: облик кота и улучшения (наполняет скрипт, renderShop)
+				.game__screen.game__screen--shop
+					.game__map.game__shop
+						.game__map-head
+							button.game__back.game__close(type='button' data-i18n-label='ui.back' aria-label='Назад')
+							.game__map-title(data-i18n='shop.title') Лавка
+							.game__map-stars.game__wallet-mini
+								i.game__coin
+									svg(viewBox='0 0 24 24' aria-hidden='true')
+										use(href='#paw')
+								span.game__wallet-num 0
+						.game__tabs#game-shop-tabs
+							button.is-on(type='button' data-tab='look')
+								svg(viewBox='0 0 24 24' aria-hidden='true')
+									path(d='M8.5 3l3.5 2 3.5-2 5.5 3-1.6 4.6-2.4-.9V21H6.9V9.7l-2.4.9L3 6z')
+								span(data-i18n='shop.look') Облик
+							button(type='button' data-tab='up')
+								svg(viewBox='0 0 24 24' aria-hidden='true')
+									path(d='M19.4 13a7.6 7.6 0 0 0 0-2l2.1-1.6-2-3.5-2.5 1a7.4 7.4 0 0 0-1.7-1l-.4-2.6h-4l-.4 2.6a7.4 7.4 0 0 0-1.7 1l-2.5-1-2 3.5L4.6 11a7.6 7.6 0 0 0 0 2l-2.1 1.6 2 3.5 2.5-1a7.4 7.4 0 0 0 1.7 1l.4 2.6h4l.4-2.6a7.4 7.4 0 0 0 1.7-1l2.5 1 2-3.5zM12 15.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7z')
+								span(data-i18n='shop.up') Улучшения
+						.game__worlds#game-shop-list
+
+				//- Задания дня и достижения (наполняет скрипт, renderQuests)
+				.game__screen.game__screen--quests
+					.game__map.game__quests
+						.game__map-head
+							button.game__back.game__close(type='button' data-i18n-label='ui.back' aria-label='Назад')
+							.game__map-title(data-i18n='quests.title') Задания
+							.game__map-stars.game__wallet-mini
+								i.game__coin
+									svg(viewBox='0 0 24 24' aria-hidden='true')
+										use(href='#paw')
+								span.game__wallet-num 0
+						.game__tabs#game-quest-tabs
+							button.is-on(type='button' data-tab='day' data-i18n='quests.day') На сегодня
+							button(type='button' data-tab='ach' data-i18n='quests.ach') Достижения
+							button(type='button' data-tab='run' data-i18n='quests.run') Забег дня
+						.game__worlds#game-quest-list
+
+				//- Справочник: всё, что встречается в пути. Записи открываются при первой встрече; картинки — снимки моделей игры
+				.game__screen.game__screen--codex
+					.game__map.game__codex
+						.game__map-head
+							button.game__back.game__close(type='button' data-i18n-label='ui.back' aria-label='Назад')
+							.game__map-title(data-i18n='cx.title') Справочник
+							.game__map-stars#game-codex-count
+						.game__tabs#game-codex-tabs
+							button.is-on(type='button' data-tab='boss' data-i18n='cx.boss') Боссы
+							button(type='button' data-tab='foe' data-i18n='cx.foe') Враги
+							button(type='button' data-tab='trap' data-i18n='cx.trap') Ловушки
+							button(type='button' data-tab='bonus' data-i18n='cx.bonus') Бонусы
+						.game__worlds.game__codex-list#game-codex-list
+
+				//- Карта кампании «Дорога к Небесному замку»: миры и уровни строит скрипт (renderMap)
+				.game__screen.game__screen--map
+					.game__map
+						.game__map-head
+							button.game__back#game-map-back(type='button' data-i18n-label='ui.back' aria-label='Назад')
+							.game__map-title(data-i18n='map.title') Дорога к Небесному замку
+							.game__map-stars#game-map-stars
+						.game__worlds#game-worlds
+
+				//- Уровень пройден: звёзды и что за них
+				.game__screen.game__screen--win
+					.game__card
+						.game__card-title#game-win-title
+						.game__win-stars
+							- for (var i = 0; i < 3; i++)
+								svg.game__win-star(viewBox='0 0 24 24' aria-hidden='true')
+									path(d='M12 2.6l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.4l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z')
+						p.game__text.game__text--small#game-win-text
+						button.game__btn#game-next(type='button' data-i18n='win.next') Дальше
+						.game__row
+							button.game__btn.game__btn--ghost#game-win-again(type='button' data-i18n='ui.again') Ещё раз
+							button.game__btn.game__btn--ghost#game-win-map(type='button' data-i18n='ui.map') Карта
+
+				//- Загрузчик: небо меню с островами, над ним облака; логотип парит; деревянная полоса с золотом — монетка-лапка
+				//- катится по ней к замку в конце; внизу — совет из кампании (загрузчик заполняет скрипт: loaderTo, loaderTip)
+				.game__loader(aria-hidden='true')
+					.game__loader-sky
+					.game__loader-clouds
+						i
+						i
+					.game__loader-body
+						.game__loader-logo
+						.game__loader-bar
+							.game__loader-track
+								i#game-progress
+							.game__loader-ride#game-progress-ride
+								i.game__coin.game__loader-coin
+									svg(viewBox='0 0 24 24')
+										use(href='#paw')
+							svg.game__loader-goal(viewBox='0 0 40 40')
+								path.game__loader-stone(d='M7 38V20h4v-3h3v3h3V13h6v7h3v-3h3v3h4v18z')
+								path.game__loader-roof(d='M6.5 20L9 13l2.5 7zM17 13l3-9 3 9zM28.5 20L31 13l2.5 7z')
+								path.game__loader-gate(d='M17.5 38v-6a2.5 2.5 0 0 1 5 0v6z')
+								path.game__loader-flag(d='M20 4V0.8l4.6 1.4L20 3.6z')
+						.game__loader-text(data-i18n='ui.loading') Загрузка
+					.game__loader-tip#game-loader-tip
+
+		include includes/foot

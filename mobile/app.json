@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "Кот-рыцарь",
+    "slug": "cat-knight",
+    "version": "0.9.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#7cc0ff",
+    "assetBundlePatterns": [
+      "assets/*"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.example.catknight",
+      "buildNumber": "1",
+      "supportsTablet": false,
+      "requireFullScreen": true,
+      "infoPlist": {
+        "CFBundleDisplayName": "Кот-рыцарь",
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.example.catknight",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#7cc0ff"
+      },
+      "permissions": [
+        "VIBRATE"
+      ]
+    },
+    "locales": {
+      "en": "./locales/en.json",
+      "ru": "./locales/ru.json"
+    },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "cover",
+          "backgroundColor": "#7cc0ff",
+          "imageWidth": 1284
+        }
+      ]
+    ]
+  }
+}

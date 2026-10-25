@@ -1,0 +1,108 @@
+@use "sass:list";
+@use 'functions' as *;
+
+
+@mixin pseudo() {
+  content: '';
+  display: block;
+  position: absolute;
+}
+
+// div::after {
+//     @include pseudo;
+// }
+
+@mixin input-placeholder {
+  &::-webkit-input-placeholder { @content; }
+  &:-moz-placeholder { @content; }
+  &::-moz-placeholder { @content; }
+  &:-ms-input-placeholder { @content; }
+}
+
+// input,  
+// textarea {  
+//     @include input-placeholder {
+//         color: $grey;
+//     }
+// }
+@mixin pointer {
+  &[disabled] {
+    pointer-events: none;
+    user-select: none;
+  }
+
+  @media (pointer: fine) {
+    &:not([disabled]):hover {
+      @content;
+      cursor: pointer;
+    }
+  }
+
+  &:not([disabled]):active {
+    @content;
+  }
+}
+
+// @include pointer{
+//   background: #FFCA42;
+//   color: #15191F
+// }
+
+
+@mixin transition($time, $properties...) {
+  $transition: ();
+
+  @each $property in $properties {
+    $transition: list.append($transition, ($property $time ease-in-out), $separator: comma);
+  }
+
+  transition: $transition;
+}
+
+// @include transition(150ms, width, background-color);
+
+
+
+@mixin transitionDelay($time, $delay, $properties...) {
+  $transition: ();
+
+@each $property in $properties {
+  $transition: list.append($transition, ($property $time $delay ease-in-out), $separator: comma);
+}
+
+transition: $transition;
+}
+
+// @include transitionDelay(150ms, 150ms, width, background-color);
+
+@mixin scrollbars($size, $foreground-color, $background-color: rgba($foreground-color, 0.2)) {
+  &::-webkit-scrollbar {
+    width: $size;
+    height: $size;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: $foreground-color;
+
+    &:hover {
+      background: rgba($foreground-color, 0.6);
+    }
+  }
+
+  &::-webkit-scrollbar-track {
+    background: $background-color;
+  }
+
+  & {
+    scrollbar-face-color: $foreground-color;
+    scrollbar-track-color: $background-color;
+    overflow-y: auto;
+    scrollbar-color: $foreground-color $background-color;
+    scrollbar-width: thin;
+    transition: scrollbar-color 0.3s ease-out;
+
+    &:hover {
+      scrollbar-color: rgba($foreground-color, 0.6);
+    }
+  }
+}

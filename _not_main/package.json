@@ -1,0 +1,49 @@
+{
+  "name": "start-pack",
+  "version": "1.0.0",
+  "main": "gulpfile.js",
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "@babel/core": "^7.26.9",
+    "@babel/preset-env": "^7.26.9",
+    "browser-sync": "^3.0.3",
+    "esbuild": "0.28.2",
+    "gulp": "^5.0.0",
+    "gulp-autoprefixer": "^9.0.0",
+    "gulp-babel": "^8.0.0",
+    "gulp-concat": "^2.6.1",
+    "gulp-pipe": "^1.0.4",
+    "gulp-pug": "^5.0.0",
+    "gulp-rename": "^2.0.0",
+    "gulp-uglify": "^3.0.2",
+    "imagemin": "^9.0.0",
+    "pug": "^3.0.3",
+    "three": "0.186.1"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "cheerio": "^1.0.0",
+    "cssnano": "^7.0.6",
+    "gulp-imagemin": "^9.1.0",
+    "gulp-postcss": "^10.0.0",
+    "gulp-replace": "^1.1.4",
+    "gulp-sass": "^6.0.1",
+    "image-size": "^2.0.2",
+    "imagemin-webp": "^8.0.0",
+    "install": "^0.13.0",
+    "ktx2-encoder": "^0.6.0",
+    "merge-stream": "^2.0.0",
+    "minimist": "^1.2.8",
+    "playwright-core": "1.49.1",
+    "sass": "^1.85.1",
+    "sharp": "^0.35.5",
+    "through2": "^4.0.2"
+  },
+  "scripts": {
+    "start": "gulp",
+    "convertwebp": "node convertwebp.js",
+    "check": "gulp js_compile && node check/check.cjs"
+  }
+}

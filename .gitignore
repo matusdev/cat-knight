@@ -1,0 +1,15 @@
+# зависимости — ставятся npm install (в _not_main и mobile); package-lock.json коммитим
+node_modules/
+
+# ручные бэкапы и снимки автопроверок — git их заменяет
+_not_main/_backup/
+_not_main/check/out/
+
+# собирается: npx gulp playable → build/, компиляция pug → compile/, папка для Vercel → dist/
+build/
+compile/
+dist/
+
+# мобильное приложение: служебное Expo и логи
+.expo/
+*.log

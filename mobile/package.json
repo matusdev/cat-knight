@@ -1,0 +1,26 @@
+{
+  "name": "cat-knight",
+  "version": "0.9.0",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "sync-game": "node scripts/sync-game.cjs",
+    "start": "npm run sync-game && expo start",
+    "android": "npm run sync-game && expo start --android",
+    "ios": "npm run sync-game && expo start --ios",
+    "build:android": "npm run sync-game && eas build --platform android --profile preview",
+    "build:ios": "npm run sync-game && eas build --platform ios --profile preview"
+  },
+  "dependencies": {
+    "expo": "~58.0.19",
+    "expo-asset": "~58.0.18",
+    "expo-haptics": "~58.0.7",
+    "expo-keep-awake": "~58.0.3",
+    "expo-sensors": "~58.0.4",
+    "expo-splash-screen": "~58.0.11",
+    "expo-status-bar": "~58.0.4",
+    "react": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-webview": "14.0.1"
+  }
+}

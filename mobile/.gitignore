@@ -1,0 +1,10 @@
+node_modules/
+.expo/
+dist/
+web-build/
+ios/
+android/
+*.log
+# игра копируется из build/playable.html перед запуском (npm run sync-game)
+assets/game.html
+assets/music/

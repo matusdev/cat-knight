@@ -1,0 +1,4045 @@
+@use 'abstracts/functions' as *;
+@use 'abstracts/mixins' as *;
+
+// Интерфейс поверх 3D-сцены. Единица u — 1% ширины портретного экрана; на коротких и широких экранах
+// (iPhone SE, компьютер) её ограничивает высота: в высоту всегда не меньше 200u. Поэтому HUD одинаков на любом телефоне.
+@function u($n) {
+  @return calc(var(--u) * #{$n});
+}
+
+// пиксель макета меню (12.png, кадр 1500×739): --k задаёт масштаб — на широком экране один на всё меню, на телефоне свой у блока
+@function k($n) {
+  @return calc(var(--k) * #{$n});
+}
+
+$c-sky: #6fb4ee;
+$c-ink: #5b3417;
+$c-text: #6d4a2c;
+$c-muted: #9a7656;
+$c-gold: #ffc93c;
+$c-red: #e8323f;
+$c-pill: rgba(30, 24, 34, .66);
+$font: 'Nunito', 'Arial Rounded MT Bold', 'Trebuchet MS', sans-serif;
+
+// толстая мультяшная обводка текста
+@mixin outline($c, $w: .6, $drop: 1.6) {
+  text-shadow:
+    u($w) 0 0 $c, u(-$w) 0 0 $c, 0 u($w) 0 $c, 0 u(-$w) 0 $c,
+    u($w * .7) u($w * .7) 0 $c, u(-$w * .7) u($w * .7) 0 $c, u($w * .7) u(-$w * .7) 0 $c, u(-$w * .7) u(-$w * .7) 0 $c,
+    0 u($drop) 0 $c, 0 u($drop + 1) u(3) rgba(0, 0, 0, .35);
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: $c-sky;
+  overscroll-behavior: none;
+}
+
+.body-wrap {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.game {
+  --u: min(1vw, .5vh, 5.2px); // на экран — 100u в ширину и не меньше 200u в высоту (заставка помещается целиком)
+  --hero: url('../img/hero.jpg'); // фото героя: заставка и аватар (в playable вшивается один раз)
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: linear-gradient(180deg, #3d8fe0 0%, #7fbdf0 55%, #d4e9fa 100%);
+  font-family: $font;
+  font-weight: 800;
+  color: #fff;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+
+  &__sprite {
+    position: absolute;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+  }
+
+  &__canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+    @include transition(.5s, opacity);
+  }
+
+  &.is-loading &__canvas {
+    opacity: 0;
+  }
+
+  // мягкая виньетка поверх сцены — взгляд держится в центре, края кадра «киношные»
+  &__vignette {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 50% 55%, rgba(10, 12, 30, 0) 55%, rgba(10, 12, 30, .32) 100%);
+  }
+
+  // штрихи скорости: тонкие лучи от середины кадра, видны только по краям; яркость — из скрипта (speedFx), дрожат
+  &__speed {
+    position: absolute;
+    inset: -15%;
+    pointer-events: none;
+    opacity: 0;
+    background: repeating-conic-gradient(from 0deg at 50% 45%, rgba(255, 255, 255, 0) 0deg 2.1deg, rgba(255, 255, 255, .6) 2.3deg 2.6deg, rgba(255, 255, 255, 0) 2.8deg 4.7deg);
+    -webkit-mask: radial-gradient(ellipse 50% 46% at 50% 45%, transparent 62%, #000 100%);
+    mask: radial-gradient(ellipse 50% 46% at 50% 45%, transparent 62%, #000 100%);
+    animation: game-speed .14s steps(2) infinite;
+    transition: opacity .35s;
+  }
+
+  &.is-calm &__speed {
+    animation: none;
+  }
+
+  // переход между экранами: облака вспухают из середины и тают, открывая новый экран (wipe; .is-calm — без него)
+  &__wipe {
+    position: absolute;
+    inset: -20%;
+    z-index: 40;
+    pointer-events: none;
+    opacity: 0;
+    background:
+      radial-gradient(circle at 50% 50%, #fff 0%, rgba(255, 255, 255, .95) 22%, rgba(236, 245, 255, 0) 46%),
+      radial-gradient(circle at 30% 38%, #fff 0%, rgba(244, 249, 255, .9) 16%, rgba(236, 245, 255, 0) 34%),
+      radial-gradient(circle at 70% 36%, #fff 0%, rgba(244, 249, 255, .9) 15%, rgba(236, 245, 255, 0) 32%),
+      radial-gradient(circle at 36% 66%, #fff 0%, rgba(244, 249, 255, .9) 17%, rgba(236, 245, 255, 0) 35%),
+      radial-gradient(circle at 66% 64%, #fff 0%, rgba(244, 249, 255, .9) 16%, rgba(236, 245, 255, 0) 34%);
+    // слой растрируется один раз, дальше его только масштабирует композитор (без этого браузер перерисовывал градиенты
+    // на каждом шаге масштаба — до 0,1 с кадра на старте забега)
+    will-change: transform, opacity;
+
+    &.is-on {
+      animation: game-wipe .7s ease-out;
+    }
+  }
+
+  &.is-calm &__wipe.is-on {
+    animation-duration: .01s;
+  }
+
+  // монеты летят в счётчик: кружки поверх сцены; путь — переход transform (flyCoin)
+  &__flyers {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    overflow: hidden;
+
+    i {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: u(5.4);
+      height: u(5.4);
+      margin: u(-2.7) 0 0 u(-2.7);
+      border: u(.4) solid #b9760f;
+      border-radius: 50%;
+      background: radial-gradient(circle at 38% 32%, #fff1a6 0%, #ffd34a 40%, #f2ad25 75%, #c98512 100%);
+      box-shadow: 0 0 u(2) rgba(255, 210, 90, .8);
+      opacity: 0;
+      will-change: transform;
+
+      &.is-go {
+        opacity: 1;
+        transition: transform .5s cubic-bezier(.55, -.35, .75, .95), opacity .5s step-end;
+      }
+    }
+  }
+
+  // вспышка молнии: яркость задаёт скрипт (updateWeather), сверху светлее — молния за горизонтом
+  &__flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    opacity: 0;
+    background: linear-gradient(180deg, #f1ecff 0%, rgba(241, 236, 255, .4) 60%, rgba(241, 236, 255, 0) 100%);
+
+    // порыв метели: иней по краям экрана
+    &.is-frost {
+      background: radial-gradient(ellipse at 50% 50%, rgba(238, 247, 255, 0) 40%, rgba(238, 247, 255, .55) 78%, rgba(238, 247, 255, .9) 100%);
+    }
+  }
+
+  // ---------- HUD ----------
+  &__hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: max(#{u(4)}, env(safe-area-inset-top)) u(4) 0;
+    pointer-events: none;
+    opacity: 0;
+    transform: translateY(#{u(-4)});
+    @include transition(.4s, opacity, transform);
+  }
+
+  &.is-play &__hud,
+  &.is-pause &__hud,
+  &.is-fall &__hud,
+  &.is-over &__hud,
+  &.is-win &__hud {
+    opacity: 1;
+    transform: none;
+  }
+
+  &__player {
+    display: flex;
+    align-items: center;
+    height: u(11);
+    margin-top: u(1);
+    padding-right: u(2.6);
+    border-radius: u(3.4);
+    background: $c-pill;
+    box-shadow: 0 u(.8) u(2.4) rgba(0, 0, 0, .25);
+  }
+
+  // мордочка с фото заставки; рамка вокруг — шкала «Рыцарской ярости» (--fury, 0…100, заполняется по кругу)
+  &__avatar {
+    position: relative;
+    flex: none;
+    width: u(14);
+    height: u(14);
+    margin: 0 u(1.6) 0 u(-1);
+    border: u(.7) solid #2a2028;
+    border-radius: u(3.4);
+    background: #e9d2b4 var(--hero) 43% 22% / 500% auto no-repeat;
+    box-shadow: 0 u(.8) u(2) rgba(0, 0, 0, .35);
+  }
+
+  &__avatar::after {
+    content: '';
+    position: absolute;
+    inset: u(-1.5);
+    padding: u(.9);
+    border-radius: u(4.4);
+    background: conic-gradient(#{$c-gold} calc(var(--fury, 0) * 1%), rgba(30, 24, 34, .45) 0);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    @include transition(.3s, opacity);
+  }
+
+  &__avatar.is-on::after {
+    opacity: 1;
+  }
+
+  // ярость: рамка горит целиком и пульсирует, аватар светится
+  &.is-fury &__avatar {
+    box-shadow: 0 0 u(3.4) rgba(255, 200, 60, .95), 0 u(.8) u(2) rgba(0, 0, 0, .35);
+  }
+
+  &.is-fury &__avatar::after {
+    opacity: 1;
+    animation: game-fury 1.2s ease-in-out infinite;
+  }
+
+  &__hearts {
+    display: flex;
+  }
+
+  &__heart {
+    width: u(7.6);
+    height: u(7.6);
+    margin: 0 u(.3);
+    fill: #f2383d;
+    stroke: #7d1418;
+    stroke-width: 1.1;
+    filter: drop-shadow(0 u(.4) 0 rgba(0, 0, 0, .3));
+    @include transition(.3s, fill, stroke, opacity);
+
+    .game__heart-gloss {
+      fill: rgba(255, 255, 255, .75);
+      stroke: none;
+    }
+
+    &.is-off {
+      display: none;
+    }
+
+    &.is-gain {
+      animation: game-heart-gain .6s ease-out;
+    }
+
+    &.is-lost {
+      fill: #554a52;
+      stroke: #2b2329;
+      animation: game-heart-lose .6s ease-out;
+
+      .game__heart-gloss {
+        opacity: 0;
+      }
+    }
+  }
+
+  &__right {
+    display: flex;
+    align-items: center;
+    margin-top: u(1);
+  }
+
+  &__coins {
+    display: flex;
+    align-items: center;
+    height: u(11);
+    min-width: u(24);
+    margin-right: u(2.4);
+    padding-right: u(4);
+    border-radius: u(5.5);
+    background: $c-pill;
+    box-shadow: 0 u(.8) u(2.4) rgba(0, 0, 0, .25);
+
+    &.is-pop .game__coin {
+      animation: game-coin-pop .35s ease-out;
+    }
+  }
+
+  &__coin {
+    flex: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: u(11);
+    height: u(11);
+    margin-right: u(2);
+    border: u(.6) solid #a8690c;
+    border-radius: 50%;
+    background: radial-gradient(circle at 38% 32%, #fff1a6 0%, #ffd34a 34%, #f2ad25 70%, #c98512 100%);
+    box-shadow: inset 0 u(-.6) 0 rgba(150, 85, 0, .45), 0 u(.6) u(1.6) rgba(0, 0, 0, .3);
+
+    svg {
+      width: 66%;
+      height: 66%;
+      fill: #b9760f;
+    }
+  }
+
+  &__coins-num {
+    flex: 1;
+    text-align: center;
+    font-size: u(6.4);
+    font-weight: 900;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  &__pause {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: u(11);
+    height: u(11);
+    border-radius: u(3);
+    background: $c-pill;
+    box-shadow: 0 u(.8) u(2.4) rgba(0, 0, 0, .25);
+    pointer-events: auto;
+
+    i {
+      width: u(1.9);
+      height: u(5);
+      margin: 0 u(.8);
+      border-radius: u(.6);
+      background: #fff;
+    }
+
+    @include pointer {
+      background: rgba(30, 24, 34, .85);
+    }
+  }
+
+  // дистанция — в правой колонке под монетами: центр экрана свободен для замка
+  &__height {
+    position: absolute;
+    top: max(#{u(18.5)}, calc(env(safe-area-inset-top) + #{u(14.5)}));
+    right: u(4);
+    display: flex;
+    align-items: baseline;
+    height: u(9);
+    padding: u(1.4) u(3.4) 0;
+    border-radius: u(4.5);
+    background: $c-pill;
+    box-shadow: 0 u(.8) u(2.4) rgba(0, 0, 0, .25);
+    font-size: u(6.4);
+    font-weight: 900;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+
+    small {
+      margin-left: u(1);
+      font-size: u(4);
+      opacity: .8;
+    }
+  }
+
+  // ---------- Серия — на медальоне монет: кольцо огоньков до следующего множителя, бейдж «×N», щит ----------
+  &__medal {
+    position: relative;
+    flex: none;
+    width: u(11);
+    height: u(11);
+    margin-right: u(3.4); // кольцо шире монеты — число не задевает
+
+    .game__coin {
+      margin: 0;
+    }
+  }
+
+  &__ring {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: u(15.5);
+    height: u(15.5);
+    overflow: visible;
+    opacity: 0;
+    transform: translate(-50%, -50%);
+    @include transition(.25s, opacity);
+  }
+
+  &__coins.is-on &__ring {
+    opacity: 1;
+  }
+
+  // три деления по 120° с просветами (окружность r = 18 — 113 единиц)
+  &__ring-seg {
+    fill: none;
+    stroke: rgba(30, 24, 34, .55);
+    stroke-width: 3.4;
+    stroke-linecap: round;
+    stroke-dasharray: 29 84.1;
+    @include transition(.2s, stroke);
+
+    &.is-lit {
+      stroke: $c-gold;
+      filter: drop-shadow(0 0 1.5px rgba(255, 201, 60, .9));
+    }
+  }
+
+  &__mult {
+    position: absolute;
+    top: u(-3.6);
+    left: u(-3.4);
+    padding: u(.6) u(1.5);
+    border: u(.4) solid #fff3c4;
+    border-radius: u(2.4);
+    background: linear-gradient(180deg, #ff7a3c 0%, #e2392a 100%);
+    box-shadow: 0 u(.6) u(1.4) rgba(0, 0, 0, .3);
+    font-size: u(3.6);
+    font-weight: 900;
+    line-height: 1;
+    color: #fff;
+    text-shadow: 0 u(.3) 0 rgba(120, 20, 10, .6);
+    transform: scale(0);
+    @include transition(.25s, transform);
+
+    &.is-up {
+      animation: game-mult-up .45s ease-out;
+    }
+  }
+
+  &__coins.is-mult &__mult {
+    transform: scale(1);
+  }
+
+  // щит серии — синий значок у медальона
+  &__combo-shield {
+    position: absolute;
+    bottom: u(-2.6);
+    left: u(-2.6);
+    display: none;
+    width: u(5.6);
+    height: u(5.6);
+    fill: #5aa2ff;
+    stroke: $c-gold;
+    stroke-width: 2;
+    filter: drop-shadow(0 0 u(1.2) rgba(120, 190, 255, .8));
+  }
+
+  &__coins.has-shield &__combo-shield {
+    display: block;
+  }
+
+  // серия оборвалась: кольцо вспыхивает красным и гаснет, медальон вздрагивает
+  &__coins.is-broken {
+    .game__ring {
+      animation: game-ring-break .8s ease-out forwards;
+    }
+
+    .game__ring-seg {
+      stroke: #e2392a;
+    }
+
+    .game__medal {
+      animation: game-combo-break .4s ease-out;
+    }
+  }
+
+  // «Точно!» над котом: встаёт в точку над головой (JS) и уплывает вверх
+  &__pop {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+    color: #fff;
+    text-shadow: 0 u(.5) 0 rgba(90, 50, 10, .6), 0 0 u(3) rgba(255, 190, 60, .6);
+    opacity: 0;
+    transform: translate(-50%, -100%);
+    pointer-events: none;
+    will-change: transform, opacity; // надпись с размытой тенью растрируется раз, а не на каждом шаге масштаба (подёргивания)
+
+    b {
+      font-size: u(7);
+    }
+
+    small {
+      max-width: u(70);
+      margin-top: u(1.2);
+      font-size: u(4);
+      font-weight: 800;
+      line-height: 1.25;
+      white-space: normal;
+      text-align: center;
+
+      &:empty {
+        display: none;
+      }
+    }
+
+    &.is-on {
+      animation: game-pop 1s ease-out forwards;
+    }
+
+    &.is-big b {
+      font-size: u(9.5);
+      color: $c-gold;
+    }
+  }
+
+  // ---------- Пламенный дракон: имя и здоровье, пока идёт бой ----------
+  // здоровье босса — слева под сердечками: середина экрана (замок, босс) свободна
+  // босс: имя и здоровье — по центру, под верхней строкой HUD и над замком (шпиль замка — ниже)
+  &__boss {
+    position: absolute;
+    top: max(#{u(17.5)}, calc(env(safe-area-inset-top) + #{u(15.5)}));
+    left: 50%;
+    width: u(40);
+    text-align: center;
+    opacity: 0;
+    transform: translate(-50%, #{u(-2)});
+    @include transition(.4s, opacity, transform);
+  }
+
+  &.is-boss &__boss {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  &__boss-name {
+    margin-bottom: u(.8);
+    font-size: u(3.2);
+    font-weight: 900;
+    letter-spacing: u(.3);
+    text-transform: uppercase;
+    color: #ffd8a0;
+    text-shadow: 0 u(.4) 0 rgba(90, 20, 10, .7);
+  }
+
+  &__boss-bar {
+    height: u(2.8);
+    padding: u(.6);
+    border-radius: u(2);
+    background: rgba(40, 10, 14, .75);
+    box-shadow: 0 0 0 u(.5) #c98a2e, 0 u(.8) u(2.4) rgba(0, 0, 0, .3);
+
+    i {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border-radius: u(1.4);
+      background: linear-gradient(180deg, #ff6a4a, #c21d2b);
+      @include transition(.35s, width);
+    }
+
+    &.is-hit i {
+      animation: game-boss-hit .35s ease-out;
+    }
+  }
+
+  // «Меньше вспышек»: без пульса ярости и вспышки кадра на переходах
+  &.is-calm.is-fury &__vignette,
+  &.is-calm &__canvas.is-cut {
+    animation: none;
+  }
+
+  &.is-fury &__vignette {
+    background: radial-gradient(ellipse at 50% 55%, rgba(255, 190, 40, 0) 45%, rgba(255, 160, 20, .55) 100%);
+    animation: game-fury 1.2s ease-in-out infinite;
+  }
+
+  // ---------- Настройки ----------
+  &__corner {
+    position: absolute;
+    top: max(#{u(4)}, env(safe-area-inset-top));
+    display: flex;
+
+    &--right { right: u(4); }
+    &--left { left: u(4); }
+  }
+
+  &__icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: u(12);
+    height: u(12);
+    margin-left: u(2);
+    border-radius: u(3.4);
+    background: $c-pill;
+    box-shadow: 0 u(.8) u(2.4) rgba(0, 0, 0, .25);
+    pointer-events: auto;
+
+    svg {
+      width: 62%;
+      height: 62%;
+      fill: #fff;
+    }
+  }
+
+  &.is-start &__corner {
+    pointer-events: auto;
+  }
+
+  &__settings {
+    max-height: 100%;
+    overflow-y: auto;
+    text-align: left;
+
+    .game__card-title {
+      text-align: center;
+      margin-bottom: u(3);
+    }
+
+    .game__row {
+      margin-top: u(4);
+    }
+
+    .game__btn {
+      height: u(13);
+      font-size: u(4.6);
+    }
+
+    // смена языка (relang): подписи гаснут и проявляются уже на новом языке, рамки и кнопки стоят на месте
+    .game__card-title,
+    .game__set-row > span,
+    .game__set-credits {
+      transition: opacity .17s ease-in-out;
+    }
+
+    .game__btn,
+    #game-set-quality button {
+      transition: color .17s ease-in-out, transform .12s ease-in-out, box-shadow .12s ease-in-out, filter .12s ease-in-out;
+    }
+  }
+
+  &.is-relang &__settings {
+    .game__card-title,
+    .game__set-row > span,
+    .game__set-credits {
+      opacity: 0;
+    }
+
+    .game__btn,
+    #game-set-quality button { // «Русский · English» не меняются — не гаснут
+      color: transparent;
+    }
+  }
+
+  // мелодия и автор трека под ней — одна строка настроек: черта — под подписью автора
+  &__set-group {
+    padding-bottom: u(2.2);
+    border-bottom: u(.4) solid #ead2ad;
+
+    .game__set-row {
+      border-bottom: 0;
+      padding-bottom: u(.6);
+    }
+  }
+
+  &__set-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: u(12);
+    padding: u(1.4) 0;
+    border-bottom: u(.4) solid #ead2ad;
+    font-size: u(4.2);
+    font-weight: 800;
+
+    > span {
+      flex: 1;
+      padding-right: u(3);
+      text-align: left;
+      line-height: 1.2;
+    }
+  }
+
+  &__range {
+    flex: none;
+    width: u(30); // подписи слева — в одну строку
+    accent-color: #f2a01e;
+  }
+
+  // переключатель вариантов; ширина у графики своя и одна на оба языка — при смене языка строка не прыгает
+  &__seg {
+    flex: none;
+    display: flex;
+    border-radius: u(3);
+    background: #efe2cb;
+    padding: u(.6);
+
+    button {
+      flex: 1 1 auto;
+      padding: u(1.6) u(1.4) u(1.4); // три варианта графики помещаются в карточку
+      white-space: nowrap;
+      border-radius: u(2.4);
+      font-family: $font;
+      font-size: u(3.6);
+      font-weight: 800;
+      color: $c-muted;
+
+      &.is-on {
+        color: #4a2706;
+        background: linear-gradient(180deg, #ffe27a 0%, #ffc93c 45%, #f5a623 100%);
+        box-shadow: 0 u(.5) 0 #b8690b;
+      }
+    }
+  }
+
+  #game-set-quality {
+    width: u(52);
+  }
+
+  // мелодия: кнопка с названием, нажатие — следующая; под строкой — автор трека (лицензия CC BY).
+  // Ширина своя и постоянная: «Вперемешку» и названия треков не двигают строку
+  &__set-row &__set-track { // сильнее общего стиля кнопок
+    display: block;
+    flex: none;
+    width: u(38);
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: u(2.4) u(3) u(1.6);
+    font-size: u(3.6);
+    line-height: 1.2;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__set-credits {
+    margin: 0;
+    font-size: u(2.9);
+    font-weight: 700;
+    line-height: 1.3;
+    color: $c-muted;
+    text-align: left;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__set-id { // номер установки — по центру под кнопками, с воздухом от их объёмного края
+    margin-top: u(3.6);
+    text-align: center;
+  }
+
+  &__switch {
+    position: relative;
+    flex: none;
+    width: u(14);
+    height: u(8);
+    border-radius: u(4);
+    background: #e3cfae;
+    @include transition(.2s, background);
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: u(1);
+      left: u(1);
+      width: u(6);
+      height: u(6);
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 u(.4) u(1) rgba(0, 0, 0, .25);
+      @include transition(.2s, transform);
+    }
+
+    &.is-on {
+      background: #f2a01e;
+
+      &::after {
+        transform: translateX(#{u(6)});
+      }
+    }
+  }
+
+  &__to-settings {
+    margin-top: u(3);
+  }
+
+  // ---------- Кошелёк, лавка, задания ----------
+  &__wallet {
+    display: flex;
+    align-items: center;
+    height: u(12);
+    padding: 0 u(3.4) 0 u(.6);
+    border-radius: u(6);
+    background: $c-pill;
+    box-shadow: 0 u(.8) u(2.4) rgba(0, 0, 0, .25);
+    font-family: $font;
+    font-size: u(5);
+    font-weight: 900;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    pointer-events: auto;
+
+    .game__coin {
+      width: u(10);
+      height: u(10);
+    }
+  }
+
+  &__corner--left &__icon-btn {
+    position: relative;
+  }
+
+  &__badge {
+    position: absolute;
+    top: u(-1.6);
+    right: u(-1.6);
+    min-width: u(5.4);
+    height: u(5.4);
+    padding: 0 u(1.2);
+    border-radius: u(2.7);
+    background: $c-red;
+    font-size: u(3.4);
+    line-height: u(5.4);
+    text-align: center;
+    box-shadow: 0 0 0 u(.6) #fff;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__wallet-mini {
+    display: flex;
+    align-items: center;
+
+    .game__coin {
+      width: u(7);
+      height: u(7);
+      margin-right: u(1.4);
+    }
+  }
+
+  &__tabs {
+    flex: none;
+    display: flex;
+    margin: u(3) u(3.4) 0;
+    border-radius: u(3);
+    background: #efe2cb;
+    padding: u(.6);
+
+    button {
+      flex: 1;
+      padding: u(2) 0;
+      border-radius: u(2.4);
+      font-family: $font;
+      font-size: u(4);
+      font-weight: 800;
+      color: $c-muted;
+
+      &.is-on {
+        color: #4a2706;
+        background: linear-gradient(180deg, #ffe27a 0%, #ffc93c 45%, #f5a623 100%);
+        box-shadow: 0 u(.5) 0 #b8690b;
+      }
+    }
+  }
+
+  // строка лавки / задания: значок, название с подписью, кнопка справа
+  &__item {
+    display: flex;
+    align-items: center;
+    margin-top: u(2.6);
+    padding: u(2.4) u(2.6);
+    border-radius: u(4);
+    background: #fffdf8;
+    box-shadow: inset 0 0 0 u(.5) #ead2ad;
+    text-align: left;
+
+    &.is-worn {
+      box-shadow: inset 0 0 0 u(.8) #f2a01e;
+    }
+
+    // примеряется на коте над карточкой
+    &.is-try {
+      background: #fff6dc;
+      box-shadow: inset 0 0 0 u(.8) #5aa2ff;
+    }
+
+    &[data-try] {
+      cursor: pointer;
+    }
+  }
+
+  // телефон боком: игра — вертикальная, просим повернуть (игра встаёт на паузу — bindUi, resize)
+  &__rotate {
+    position: absolute;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(180deg, #3d8fe0 0%, #7fbdf0 100%);
+    font-size: 18px;
+    font-weight: 900;
+    text-align: center;
+
+    i {
+      width: 34px;
+      height: 58px;
+      margin-bottom: 18px;
+      border: 4px solid #fff;
+      border-radius: 8px;
+      animation: game-rotate 1.8s ease-in-out infinite;
+    }
+
+    @media (orientation: landscape) and (max-height: 500px) and (pointer: coarse) {
+      display: flex;
+    }
+  }
+
+  &__try-hint {
+    margin: u(3) 0 0;
+    font-size: u(3.4);
+    font-weight: 700;
+    color: $c-muted;
+  }
+
+  &__swatch {
+    flex: none;
+    width: u(10);
+    height: u(10);
+    margin-right: u(3);
+    border-radius: u(3);
+    box-shadow: inset 0 u(-1) 0 rgba(0, 0, 0, .2), 0 0 0 u(.5) rgba(0, 0, 0, .15);
+  }
+
+  &__item-text {
+    flex: 1;
+    min-width: 0;
+
+    b {
+      display: block;
+      font-size: u(4.2);
+      color: $c-ink;
+    }
+
+    small {
+      display: block;
+      margin-top: u(.6);
+      font-size: u(3.4);
+      font-weight: 700;
+      color: $c-muted;
+    }
+  }
+
+  &__bar {
+    height: u(1.8);
+    margin-top: u(1.4);
+    border-radius: u(1);
+    background: #efe2cb;
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #f5a623, #ffc93c);
+    }
+  }
+
+  &__buy {
+    flex: none;
+    display: flex;
+    align-items: center;
+    margin-left: u(2.4);
+    padding: u(2) u(3);
+    border-radius: u(3);
+    font-family: $font;
+    font-size: u(3.8);
+    font-weight: 900;
+    color: #4a2706;
+    background: linear-gradient(180deg, #ffe27a 0%, #ffc93c 45%, #f5a623 100%);
+    box-shadow: 0 u(.6) 0 #b8690b;
+    white-space: nowrap;
+
+    .game__coin {
+      width: u(5);
+      height: u(5);
+      margin: 0 u(1) 0 0;
+      border-width: u(.4);
+    }
+
+    &:disabled,
+    &.is-plain {
+      color: $c-muted;
+      background: #efe2cb;
+      box-shadow: none;
+    }
+  }
+
+  &__section-title {
+    margin: u(4) 0 0;
+    font-size: u(4);
+    font-weight: 900;
+    color: $c-ink;
+    text-transform: uppercase;
+    letter-spacing: u(.2);
+  }
+
+  // ---------- Лавка: как на референсе ----------
+  // Фон — из макета лавки (shop-mockup.png, 1785×881): небо (shop-sky.jpg) и островок с шатром, хоругвями, фонарями,
+  // реквизитом и постаментом (shop-isle.webp; нарисованного кота нет). На ковре — 3D-кот игры: свой прозрачный canvas
+  // поверх картинки, с тенью (frameShowroom ставит лапы в середину ковра). Панель — вырезки того же макета (shop-*.webp):
+  // рама с пергаментом (тянется по высоте экрана), круглая «назад», кошелёк, вкладка, строки, ценник с монетой, «надето»,
+  // значок раздела и линия; наши — только надписи, числа и цвета образцов. Размеры — в пикселях макета (k).
+  &__shop-bg {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background: linear-gradient(180deg, #2f7fdc 0%, #79b6ec 30%, #dfe9f4 55%, #e9eff6 100%);
+    opacity: 0;
+    visibility: hidden;
+    @include transition(.4s, opacity, visibility);
+  }
+
+  &.is-shop-bg &__shop-bg {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  &.is-shop-bg &__canvas {
+    opacity: 0;
+  }
+
+  // кадр макета (--ss — его пиксель): телефон — ковёр на 38% высоты, кот посередине, островок не шире 120% экрана
+  &__sstage {
+    --ss: min(calc(35vh / 585), calc(120vw / 961));
+    position: absolute;
+    left: calc(50vw - var(--ss) * 485);
+    top: calc(38vh - var(--ss) * 643);
+    width: calc(var(--ss) * 1785);
+    height: calc(var(--ss) * 881);
+
+    // низ кадра (обрез скалы) тает в светлом фоне — дымкой поверх, во всю ширину (маска обрезала бы зеркальное небо)
+    &::after {
+      content: '';
+      position: absolute;
+      left: -100%;
+      right: -100%;
+      bottom: -1px;
+      height: 14%;
+      background: linear-gradient(180deg, rgba(230, 238, 246, 0) 0%, #e6eef6 100%);
+      pointer-events: none;
+    }
+  }
+
+  // небо; за краями кадра (планшет, узкий широкий экран) — его зеркальные копии: на стыке шва нет
+  &__ssky {
+    position: absolute;
+    inset: 0;
+    background: url('../img/shop-sky.jpg') 0 0 / 100% 100% no-repeat;
+
+    &::before,
+    &::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: inherit;
+      transform: scaleX(-1);
+    }
+
+    &::before { right: calc(100% - 3px); } // внахлёст: крайний столбец картинки чуть темнее
+    &::after { left: calc(100% - 3px); }
+  }
+
+  // островок на макете — 0, 50, 961×831
+  &__sisle {
+    position: absolute;
+    left: 0;
+    top: 5.6754%;
+    width: 53.8375%;
+    height: 94.3246%;
+    background: url('../img/shop-isle.webp') 0 0 / 100% 100% no-repeat;
+  }
+
+  &__shop-cat {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+  }
+
+  &.is-shop &__screen--shop { // панель — сама по месту, экран без выравнивания по центру
+    display: block;
+    padding: 0;
+  }
+
+  // панель: телефон — во всю ширину под островком; широкий экран — справа во всю высоту, как на макете
+  .game__map.game__shop {
+    --k: min(calc((100vw - var(--u) * 6) / 474), calc(100vh / 1010)); // на планшете — не крупнее телефонного
+    margin: 0 auto;
+    position: absolute;
+    top: 42vh;
+    left: 0;
+    right: 0;
+    bottom: max(#{u(2)}, env(safe-area-inset-bottom));
+    width: k(474);
+    max-width: none;
+    max-height: none;
+    padding: k(20) k(13) k(14) k(29);
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+    overflow: visible;
+    isolation: isolate;
+    color: #4a2a12;
+
+    // Панель — целиком кодом, по макету: пергамент в золочёной бронзовой раме (снаружи тёмная кромка, внутри светлый
+    // кант), строки — светлые карточки с объёмом, ценники — жёлтые плашки, образцы — глянцевые плитки
+    &::before {
+      content: '';
+      position: absolute;
+      inset: 0 0 0 k(10);
+      z-index: -1;
+      border: k(7) solid transparent;
+      border-radius: k(30);
+      background:
+        radial-gradient(120% 60% at 50% 0%, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, 0) 60%) padding-box,
+        linear-gradient(180deg, #fff6e5 0%, #fcefd8 50%, #f7e5c6 100%) padding-box,
+        linear-gradient(180deg, #f3c470 0%, #d0913d 30%, #b57328 70%, #c98a3c 100%) border-box;
+      box-shadow:
+        0 0 0 k(2) #6b3c15,
+        inset 0 0 0 k(1.5) #fae3b4,
+        inset 0 k(-8) k(14) rgba(170, 120, 60, .16),
+        0 k(8) k(18) rgba(10, 25, 60, .35);
+    }
+
+    // шапка: «назад» (53×52), заголовок, кошелёк (120×51); под ней — тень-полоса во всю ширину пергамента
+    .game__map-head {
+      position: relative;
+      height: k(52);
+      padding: 0;
+      border-bottom: 0;
+    }
+
+    .game__map-head::after {
+      content: '';
+      position: absolute;
+      left: k(-19);
+      right: k(-3);
+      bottom: k(-17);
+      height: k(10);
+      background: linear-gradient(180deg, rgba(220, 184, 138, .85) 0%, rgba(239, 212, 173, .5) 55%, rgba(239, 212, 173, 0) 100%);
+      pointer-events: none;
+    }
+
+    // «назад»: бурая бляшка в золотом ободке, кремовая стрелка
+    .game__back {
+      position: relative;
+      width: k(52);
+      height: k(52);
+      margin-right: k(17);
+      border: k(5) solid transparent;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle at 50% 38%, #8d5628 0%, #6a3a16 55%, #4e2a10 100%) padding-box,
+        linear-gradient(180deg, #ffe592 0%, #f4bd45 45%, #d18d1f 100%) border-box;
+      box-shadow: 0 k(3) k(4) rgba(90, 50, 10, .35), inset 0 k(2) k(3) rgba(0, 0, 0, .35);
+
+      &::before { // стрелка: древко и наконечник
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: k(18);
+        height: k(4);
+        margin: 0;
+        border: 0;
+        border-radius: k(2);
+        background: #fbe7c1;
+        transform: translate(-42%, -50%);
+      }
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: k(11);
+        height: k(11);
+        border-left: k(4) solid #fbe7c1;
+        border-bottom: k(4) solid #fbe7c1;
+        border-radius: k(1.5);
+        transform: translate(-72%, -50%) rotate(45deg);
+      }
+    }
+
+    .game__map-title {
+      font-size: k(36);
+      line-height: 1;
+      color: #4a2a12;
+    }
+
+    .game__wallet-mini {
+      position: relative;
+      width: k(120);
+      height: k(51);
+      justify-content: center;
+      margin: 0 k(10) 0 0;
+      padding: 0 k(8) 0 k(56); // число — посередине места справа от монеты
+      border-radius: k(26);
+      background: linear-gradient(180deg, #f3e5cc 0%, #faf1e2 60%, #fdf8ee 100%);
+      box-shadow: inset 0 k(2) k(4) rgba(150, 110, 60, .3), inset 0 k(-1) 0 rgba(255, 255, 255, .9), 0 0 0 k(1.5) #ead4af;
+      font-size: k(22);
+      color: #3e2410;
+
+      .game__coin { // золотая монета с бурой серединой и лапкой
+        position: absolute;
+        top: 50%;
+        left: k(3);
+        width: k(45);
+        height: k(45);
+        margin: 0;
+        border: k(4) solid transparent;
+        background:
+          radial-gradient(circle at 50% 42%, #8a5426 0%, #5e3314 100%) padding-box,
+          linear-gradient(180deg, #ffe595 0%, #f2b53a 50%, #c98018 100%) border-box;
+        box-shadow: 0 k(2) k(3) rgba(90, 50, 10, .4);
+        translate: 0 -50%;
+
+        svg {
+          width: 62%;
+          height: 62%;
+          fill: #ffd060;
+        }
+      }
+    }
+
+    // вкладки: полоса 418×67; включённая — жёлтая плашка из макета, выключенная — бежевая
+    .game__tabs {
+      height: k(67);
+      margin: k(26) k(14) 0 k(-1);
+      padding: k(1.5) k(2) k(8) k(1);
+      gap: k(4);
+      border-radius: k(20);
+      background: #f0ddc0;
+      box-shadow: inset 0 k(2) k(3) rgba(150, 110, 60, .18), 0 k(7) 0 k(-1) rgba(220, 184, 138, .55);
+
+      button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: k(10);
+        padding: 0;
+        border-radius: k(18);
+        background: #ead6b5;
+        box-shadow: inset 0 k(2) k(3) rgba(150, 110, 60, .2);
+        font-size: k(22);
+        font-weight: 900;
+        color: #8a6a4a;
+
+        svg {
+          width: k(22);
+          height: k(22);
+          fill: currentColor;
+        }
+
+        &.is-on { // жёлтая выпуклая плашка
+          color: #4a2706;
+          background: linear-gradient(180deg, #ffe68e 0%, #ffd357 45%, #f8b42d 100%);
+          box-shadow: 0 k(4) 0 #d58b1c, inset 0 k(2) 0 rgba(255, 255, 255, .7), inset 0 0 0 k(1.5) #f2a62a, 0 k(6) k(7) rgba(150, 90, 20, .25);
+
+          // значок — в бурой бляшке, как на макете
+          svg {
+            box-sizing: content-box;
+            width: k(18);
+            height: k(18);
+            padding: k(6);
+            border-radius: 50%;
+            background: radial-gradient(circle at 40% 35%, #8a5426 0%, #5a3215 100%);
+            fill: #ffe9b8;
+          }
+        }
+      }
+    }
+
+    // список: прокрутка — тонкая, бурая, как на макете
+    .game__worlds {
+      margin-top: k(15);
+      padding: 0 k(17) k(6) 0;
+      scrollbar-width: thin;
+      scrollbar-color: #997250 #f4eadc;
+
+      &::-webkit-scrollbar {
+        width: k(8);
+      }
+
+      &::-webkit-scrollbar-track {
+        border-radius: k(4);
+        background: #f4eadc;
+      }
+
+      &::-webkit-scrollbar-thumb {
+        border-radius: k(4);
+        background: #997250;
+      }
+    }
+
+    .game__try-hint {
+      margin: 0 0 k(4);
+      font-size: k(15);
+      font-weight: 700;
+      color: #9a7656;
+    }
+
+    // раздел: значок на бурой бляшке, подпись, линия с наконечником (меч — значок из макета)
+    .game__section-title {
+      display: flex;
+      align-items: center;
+      gap: k(8);
+      margin: k(14) 0 k(6);
+      font-size: k(21);
+      font-weight: 900;
+      letter-spacing: .02em;
+      color: #4a2a12;
+
+      &::after { // линия, тающая к началу, с наконечником-«ёлочкой» на конце
+        content: '';
+        flex: 1;
+        height: k(9);
+        margin-left: k(8);
+        background:
+          url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 9'%3E%3Cpath d='M1 1l4 3.5L1 8M8 1l4 3.5L8 8' fill='none' stroke='%23e6c48c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") 100% 50% / auto 100% no-repeat,
+          linear-gradient(90deg, rgba(230, 196, 140, 0) 0%, #e6c48c 35%, #e6c48c 100%) 0 50% / calc(100% - #{k(14)}) k(2.4) no-repeat;
+      }
+    }
+
+    .game__sec-ico {
+      flex: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: k(26);
+      height: k(26);
+      border-radius: k(7);
+      background: radial-gradient(circle at 40% 35%, #7a4a26 0%, #4e2c14 100%);
+
+      svg {
+        width: 72%;
+        height: 72%;
+        fill: #f5c35a;
+      }
+    }
+
+    .is-sword .game__sec-ico { // меч — наискось через бляшку, золотом
+      border-radius: 50%;
+
+      svg {
+        width: 86%;
+        height: 86%;
+        fill: #f7c75c;
+        filter: drop-shadow(0 k(1) 0 rgba(0, 0, 0, .35));
+      }
+    }
+
+    // строка: светлая карточка с объёмом — светлый верх, золотистый кант, мягкая тень снизу
+    .game__item {
+      min-height: k(68);
+      margin: 0 0 k(8.5);
+      padding: k(5) k(12) k(5) k(13);
+      border: 0;
+      border-radius: k(15);
+      background: linear-gradient(180deg, #fffefa 0%, #fff9ef 55%, #fcf1de 100%);
+      box-shadow:
+        inset 0 0 0 k(1.5) #f0dbb6,
+        inset 0 k(2) 0 #fff,
+        0 k(3) 0 #ead1a8,
+        0 k(5) k(7) rgba(160, 110, 50, .16);
+      position: relative;
+      z-index: 0;
+
+      &.is-worn { // как на макете: надетое видно по плашке «Надето», рамки нет
+        box-shadow: inset 0 0 0 k(1.5) #f0dbb6, inset 0 k(2) 0 #fff, 0 k(3) 0 #ead1a8, 0 k(5) k(7) rgba(160, 110, 50, .16);
+      }
+
+      &.is-try {
+        background: linear-gradient(180deg, #fffef8 0%, #fff4dc 100%);
+        box-shadow: inset 0 0 0 k(2) #5aa2ff, inset 0 k(2) 0 #fff, 0 k(3) 0 #9fc3ef, 0 k(5) k(7) rgba(60, 110, 180, .2);
+      }
+    }
+
+    // образец 50×57: глянцевая плитка цвета вещи — блик сверху, скос и тень снизу
+    .game__swatch {
+      position: relative;
+      width: k(50);
+      height: k(57);
+      margin-right: k(15);
+      border-radius: k(13);
+      background:
+        radial-gradient(90% 55% at 32% 18%, rgba(255, 255, 255, .55) 0%, rgba(255, 255, 255, 0) 70%),
+        linear-gradient(180deg, rgba(255, 255, 255, .18) 0%, rgba(255, 255, 255, 0) 45%, rgba(0, 0, 0, .12) 100%),
+        var(--c, #ccc);
+      box-shadow:
+        inset 0 k(-6) 0 rgba(0, 0, 0, .2),
+        inset 0 0 0 k(1.5) rgba(0, 0, 0, .1),
+        0 k(2) k(3) rgba(80, 50, 20, .25);
+    }
+
+    .game__item-text {
+      padding: k(5) 0 k(7); // у улучшений под подписью — полоска, ей нужен отступ от края строки
+    }
+
+    .game__item-text b {
+      font-size: k(22);
+      font-weight: 800;
+      color: #4a2a12;
+    }
+
+    .game__item-text small {
+      font-size: k(15);
+      color: #8a6a4a;
+    }
+
+    .game__bar {
+      height: k(8);
+      margin-top: k(6);
+      border-radius: k(4);
+      background: #efe2cb;
+    }
+
+    // ценник 99×47: жёлтая выпуклая плашка, бурая монета с золотой лапкой и цена; без монеты («Надеть», «Макс.») — та же
+    .game__buy {
+      min-width: k(99);
+      height: k(47);
+      margin-left: k(12);
+      padding: 0 k(14) 0 k(10);
+      justify-content: center;
+      border: 0;
+      border-radius: k(15);
+      background: linear-gradient(180deg, #ffe88f 0%, #ffd559 42%, #f9b52e 100%);
+      box-shadow: 0 k(4) 0 #d6891b, inset 0 k(2) 0 rgba(255, 255, 255, .75), inset 0 0 0 k(1.5) #f1a227, 0 k(6) k(7) rgba(150, 90, 20, .25);
+      font-size: k(22);
+      font-weight: 900;
+      color: #3a220e;
+
+      &:active {
+        transform: translateY(#{k(2)});
+        box-shadow: 0 k(2) 0 #d6891b, inset 0 k(2) 0 rgba(255, 255, 255, .75), inset 0 0 0 k(1.5) #f1a227;
+      }
+
+      .game__coin {
+        width: k(29);
+        height: k(29);
+        margin: 0 k(6) 0 0;
+        border: k(2) solid #f7c34c;
+        border-radius: 50%;
+        background: radial-gradient(circle at 45% 38%, #8d5628 0%, #5a3112 100%);
+        box-shadow: 0 k(1) k(2) rgba(90, 50, 10, .35);
+
+        svg {
+          width: 66%;
+          height: 66%;
+          fill: #ffcf5a;
+        }
+      }
+
+      &:disabled:not(.is-plain) { // не хватает монет — ценник бледнее
+        opacity: .55;
+      }
+
+      // «надето» — бежевая вдавленная плашка
+      &.is-plain {
+        min-width: k(121);
+        height: k(39);
+        border-radius: k(20);
+        background: linear-gradient(180deg, #efe1c8 0%, #f5eadb 100%);
+        box-shadow: inset 0 k(2) k(3) rgba(150, 110, 60, .25), inset 0 k(-1) 0 rgba(255, 255, 255, .85);
+        color: #9c8062;
+      }
+    }
+  }
+
+  // широкий экран — как на макете: островок слева (кот — посередине свободного места), панель справа во всю высоту
+  @media (min-aspect-ratio: 21/20) {
+    &__sstage {
+      --ss: max(calc(100vh / 881), calc(100vw / 1785));
+      top: calc(50vh - var(--ss) * 440.5);
+      left: min(0px, calc(50vw - var(--ss) * 746.7));
+    }
+
+    .game__map.game__shop {
+      --k: min(.11351vh, .0714vw);
+      top: k(47.5);
+      bottom: k(47.5);
+      left: auto;
+      right: max(#{k(49.5)}, env(safe-area-inset-right));
+      width: k(474);
+    }
+  }
+
+  // переход в лавку и обратно: кадр проявляется из неба
+  &__canvas.is-cut {
+    animation: game-cut .35s ease-out;
+  }
+
+  // активные бонусы под шкалой ярости
+  &__buffs {
+    position: absolute;
+    top: max(#{u(32)}, calc(env(safe-area-inset-top) + #{u(28)}));
+    left: 50%;
+    display: flex;
+    transform: translateX(-50%);
+
+    span {
+      display: flex;
+      align-items: center;
+      margin: 0 u(1);
+      padding: u(.8) u(2.2) u(.8) u(1.2);
+      border-radius: u(3);
+      background: $c-pill;
+      font-size: u(3.6);
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+
+      i {
+        width: u(4.4);
+        height: u(4.4);
+        margin-right: u(1.2);
+        border-radius: 50%;
+      }
+    }
+  }
+
+
+  // ---------- Кнопки на телефоне: меч справа; слева прыжок-трюк, под ним подкат (когда в забеге есть бег) ----------
+  // Все три одного размера ($pad); нижние — на одной линии, прыжок — над подкатом (стрелки как на экране: ↑ над ↓).
+  // Левше — зеркально
+  $pad: u(20);
+  $pad-gap: u(3);
+
+  &__pads {
+    position: absolute;
+    left: 0;
+    bottom: calc(#{u(5)} + env(safe-area-inset-bottom));
+    width: 100%;
+    display: none;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding: 0 u(5);
+    pointer-events: none;
+  }
+
+  &.is-touch.is-play &__pads {
+    display: flex;
+  }
+
+  &.is-lefty &__pads {
+    flex-direction: row-reverse;
+  }
+
+  &__pad {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: $pad;
+    height: $pad;
+    border-radius: 50%;
+    background: rgba(30, 24, 34, .5);
+    box-shadow: inset 0 0 0 u(.8) rgba(255, 255, 255, .55), 0 u(1) u(3) rgba(0, 0, 0, .3);
+    pointer-events: auto;
+    touch-action: none;
+    @include transition(.1s, transform, background);
+
+    svg {
+      width: 52%;
+      height: 52%;
+      fill: #fff;
+      stroke: #fff;
+    }
+
+    &.is-down {
+      transform: scale(.9);
+      background: rgba(255, 201, 60, .7);
+    }
+
+    &.is-glow {
+      animation: game-pad-glow 1s ease-in-out infinite;
+    }
+  }
+
+  // подкат — в углу, на линии меча; прыжок над ним. Только когда в забеге есть бег
+  &__pad--slide {
+    position: absolute;
+    left: u(5);
+    bottom: 0;
+    display: none;
+  }
+
+  &.is-runner &__pad--slide {
+    display: flex;
+  }
+
+  &.is-runner &__pad--trick {
+    margin-bottom: calc(#{$pad} + #{$pad-gap});
+  }
+
+  &.is-lefty &__pad--slide {
+    left: auto;
+    right: u(5);
+  }
+
+  // переключатель режима на заставке
+  &__modes {
+    justify-content: center;
+    margin: 0 auto u(3);
+    width: max-content;
+    background: $c-pill;
+
+    button {
+      color: rgba(255, 255, 255, .78);
+    }
+  }
+
+  &__pad--trick svg path:first-child {
+    fill: none;
+  }
+
+  // на бегу кнопка трюка прыгает — стрелка вверх вместо петли
+  &__pad--trick svg.game__pad-jump,
+  &.is-run-now &__pad--trick svg {
+    display: none;
+  }
+
+  &.is-run-now &__pad--trick svg.game__pad-jump {
+    display: block;
+  }
+
+  &__pad--trick svg.game__pad-jump path:first-child {
+    fill: #fff;
+  }
+
+  // ---------- Обучение при первом запуске ----------
+  &__coach {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: u(6);
+    background: rgba(16, 34, 70, .45);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    @include transition(.3s, opacity, visibility);
+
+    &.is-on {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+  }
+
+  &__coach-card {
+    width: 100%;
+    max-width: u(80);
+    padding: u(5) u(5) u(5);
+    text-align: center;
+    color: $c-text;
+    border: u(.8) solid #8a5426;
+    border-radius: u(7);
+    background: linear-gradient(180deg, #fff9ec 0%, #f7e6c7 100%);
+    box-shadow: 0 u(1.6) 0 #6b3d17, 0 u(6) u(14) rgba(10, 25, 60, .35);
+  }
+
+  // экран телефона, по которому рука показывает жест (класс шага — на .game__coach)
+  &__coach-demo {
+    position: relative;
+    width: u(30);
+    height: u(44);
+    margin: 0 auto u(4);
+    border: u(1) solid #6d4a2c;
+    border-radius: u(4);
+    background: linear-gradient(180deg, #8fc6f5, #d8ecfb);
+  }
+
+  &__coach-hand {
+    position: absolute;
+    left: 50%;
+    top: 62%;
+    width: u(9);
+    height: u(9);
+    margin: u(-4.5) 0 0 u(-4.5);
+    border-radius: 50%;
+    background: rgba(255, 255, 255, .9);
+    box-shadow: 0 0 0 u(1) rgba(255, 201, 60, .9), 0 u(1) u(3) rgba(0, 0, 0, .3);
+  }
+
+  &__coach.is-tilt &__coach-demo { animation: game-tilt 2.4s ease-in-out infinite; }
+  &__coach.is-tilt &__coach-hand { display: none; }
+  &__coach.is-steer &__coach-hand { animation: game-coach-steer 2s ease-in-out infinite; }
+  &__coach.is-tap &__coach-hand { left: 80%; top: 86%; animation: game-coach-tap 1s ease-in-out infinite; }
+  &__coach.is-swipe &__coach-hand { animation: game-coach-swipe 1.2s ease-in infinite; }
+  &__coach.is-swipedown &__coach-hand { animation: game-coach-swipe 1.2s ease-in infinite reverse; }
+
+  &__coach-text {
+    margin: 0 0 u(3);
+    font-size: u(5);
+    font-weight: 800;
+    line-height: 1.35;
+
+    b {
+      color: $c-ink;
+    }
+  }
+
+  &__coach-dots {
+    display: flex;
+    justify-content: center;
+    margin-bottom: u(4);
+
+    i {
+      width: u(2.2);
+      height: u(2.2);
+      margin: 0 u(1);
+      border-radius: 50%;
+      background: #e3cfae;
+
+      &.is-on {
+        background: #f2a01e;
+      }
+    }
+  }
+
+  // ---------- Всплывающее сообщение и подсказка ----------
+  // подсказки — внизу экрана; на телефоне — между кнопками трюка и меча
+  &__toast {
+    position: absolute;
+    left: 50%;
+    bottom: calc(#{u(6)} + env(safe-area-inset-bottom));
+    padding: u(2.4) u(4.6);
+    border-radius: u(5);
+    background: $c-pill;
+    width: max-content;
+    max-width: calc(100% - #{u(10)});
+    font-size: u(5);
+    font-weight: 900;
+    line-height: 1.25;
+    text-align: center;
+    opacity: 0;
+    transform: translate(-50%, #{u(3)}) scale(.9);
+    pointer-events: none;
+    @include transition(.3s, opacity, transform);
+
+    &.is-visible {
+      opacity: 1;
+      transform: translate(-50%, 0);
+    }
+  }
+
+  &__hint {
+    position: absolute;
+    left: 50%;
+    bottom: calc(#{u(21)} + env(safe-area-inset-bottom)); // над строкой подсказок
+    display: flex;
+    align-items: center;
+    padding: u(2.6) u(4);
+    border-radius: u(6);
+    background: $c-pill;
+    font-size: u(5);
+    white-space: nowrap;
+    opacity: 0;
+    transform: translateX(-50%);
+    pointer-events: none;
+    @include transition(.5s, opacity);
+  }
+
+  &.is-touch &__hint { // над кнопками и над подсказкой между ними (до четырёх строк)
+    bottom: calc(#{u(37)} + env(safe-area-inset-bottom));
+  }
+
+  &.is-touch.is-runner &__hint { // над колонкой «прыжок + подкат»
+    bottom: calc(#{u(52)} + env(safe-area-inset-bottom));
+  }
+
+  &.is-touch.is-play &__toast { // между кнопками внизу — с зазором от них (кнопки по u(20) у краёв)
+    max-width: u(44);
+    font-size: u(4.4);
+  }
+
+
+  &.is-hint &__hint {
+    opacity: 1;
+  }
+
+  // поверх паузы, финала, спасения, итогов уровня и открытых из паузы настроек и карты подсказки забега не висят
+  &.is-pause,
+  &.is-over,
+  &.is-save,
+  &.is-win,
+  &.is-settings,
+  &.is-map {
+    .game__toast,
+    .game__hint {
+      opacity: 0;
+    }
+  }
+
+  &__hint-arrow {
+    width: u(3.4);
+    height: u(3.4);
+    margin: 0 u(3);
+    border-top: u(1.1) solid #ffd34a;
+    border-left: u(1.1) solid #ffd34a;
+
+    &--left {
+      transform: rotate(-45deg);
+      animation: game-nudge-left 1s ease-in-out infinite;
+    }
+
+    &--right {
+      transform: rotate(135deg);
+      animation: game-nudge-right 1s ease-in-out infinite;
+    }
+  }
+
+  // ---------- Затемнение под паузой и финалом ----------
+  &__shade {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(180deg, rgba(16, 34, 70, .35) 0%, rgba(16, 34, 70, .55) 100%);
+    opacity: 0;
+    visibility: hidden;
+    @include transition(.35s, opacity, visibility);
+  }
+
+  &.is-pause &__shade,
+  &.is-over &__shade,
+  &.is-win &__shade,
+  &.is-map &__shade,
+  &.is-settings &__shade,
+  &.is-quests &__shade,
+  &.is-daily &__shade,
+  &.is-save &__shade,
+  &.is-codex &__shade {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  // ---------- Экраны ----------
+  &__screen {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: max(#{u(6)}, env(safe-area-inset-top)) u(6) max(#{u(6)}, env(safe-area-inset-bottom));
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    @include transition(.35s, opacity, visibility);
+
+    .game__card {
+      transform: translateY(#{u(6)}) scale(.96);
+      @include transition(.4s, transform);
+    }
+  }
+
+  &.is-start &__screen--start,
+  &.is-pause &__screen--pause,
+  &.is-over &__screen--over,
+  &.is-map &__screen--map,
+  &.is-win &__screen--win,
+  &.is-settings &__screen--settings,
+  &.is-shop &__screen--shop,
+  &.is-quests &__screen--quests,
+  &.is-daily &__screen--daily,
+  &.is-save &__screen--save,
+  &.is-codex &__screen--codex {
+    opacity: 1;
+    visibility: visible;
+
+    .game__card {
+      transform: none;
+      pointer-events: auto;
+    }
+  }
+
+  // ---------- Меню: как на референсе ----------
+  // Фон — два слоя из макета (12.png): небо с дальними островами, шаром и замком (menu-sky.jpg; чуть сдвигается за
+  // пальцем, мышью или наклоном — --mx, --my из скрипта) и, ближе, островок с котом — живой canvas (menuisle.js).
+  // Логотип, кнопки, кошелёк, карточка, прогресс и рекорд — вырезки из того же макета (logo.webp, ui-*.webp), наши
+  // только подписи и числа поверх.
+  // Размеры плашек — в пикселях макета: k(n) = n · --k. На широком экране --k один на всё (как на макете, по высоте
+  // экрана); на телефоне у каждого блока свой --k (в единицах u), раскладка — столбцом: логотип сверху, кот посередине,
+  // внизу полоса похода, «Играть», режим и «Облик · Уровни · Настройки» медальонами.
+  // Подписи на плашках — в единицах контейнера (cqh, cqw): плашка любого размера — та же картинка, что на макете.
+  $wood: linear-gradient(180deg, #54463c 0%, #463a31 52%, #3a2f27 100%);
+  $rim: #6e5d50;
+
+  &__menu-bg {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    // телефон: картина по высоте 65% экрана, выше — продолжение неба, ниже — облака
+    background: linear-gradient(180deg, #1b72dc 0%, #207de1 20%, #9fbfe2 62%, #e6ebf1 80%);
+    opacity: 0;
+    visibility: hidden;
+    @include transition(.5s, opacity, visibility);
+
+    // стыки картины с небом и облаками (телефон); островок под ними — его низ тает в облаках
+    &::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(180deg, #1b72dc 0%, #207de1 13%, rgba(32, 125, 225, 0) 18%, rgba(223, 230, 238, 0) 64%, #dfe6ee 74%);
+      pointer-events: none;
+    }
+  }
+
+  &.is-menu-bg &__menu-bg {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  &.is-menu-bg &__canvas {
+    opacity: 0;
+  }
+
+  // кадр макета 1500×739: оба слоя в одних координатах. Телефон — по высоте 65% экрана; на экране — середина кадра
+  // (46.33%: кот чуть левее), и не шире 782 px макета — небо между меню и карточкой (небо — чистая картинка, refcut/sky.cjs)
+  &__mstage {
+    position: absolute;
+    top: 9vh;
+    left: calc(50vw - max(61.13vh, 88.87vw));
+    height: max(65vh, 94.5vw);
+    aspect-ratio: 1500 / 739;
+  }
+
+  &__msky {
+    position: absolute;
+    inset: 0;
+    background: url('../img/menu-sky.jpg') 0 0 / 100% 100% no-repeat;
+    translate: calc(var(--mx, 0) * -.6%) calc(var(--my, 0) * -.4%);
+    animation: game-menu-drift 26s ease-in-out infinite alternate; // медленный «вдох» неба
+  }
+
+  // островок с котом — живой canvas (menuisle.js: кот смотрит на курсор, знамёна развеваются); от мыши сам не движется,
+  // только парит. Место на макете — 391, 201, 593×553; низ (обрез кадра) тает. Без WebGL — картинка фоном (из скрипта)
+  &__misle {
+    position: absolute;
+    left: 26.0667%;
+    top: 27.199%;
+    width: 39.5333%;
+    height: 74.8309%;
+    background: none 0 0 / 100% 100% no-repeat;
+    -webkit-mask-image: linear-gradient(180deg, #000 93%, transparent 100%);
+    mask-image: linear-gradient(180deg, #000 93%, transparent 100%);
+    animation: game-isle-float 7s ease-in-out infinite alternate;
+  }
+
+  &__screen--start {
+    display: block;
+    padding: 0;
+    background: linear-gradient(180deg, rgba(40, 110, 205, .18) 0%, rgba(40, 110, 205, 0) 18%, rgba(16, 34, 70, 0) 60%, rgba(16, 34, 70, .35) 100%);
+  }
+
+  // ----- угловые кнопки: кошелёк, корзина, задания, шестерёнка — картинки из макета -----
+  &__screen--start &__corner {
+    --k: calc(var(--u) * .175);
+    top: max(#{u(3)}, env(safe-area-inset-top));
+    align-items: flex-start;
+    gap: k(15);
+
+    &--left { left: u(3); }
+    &--right { right: u(3); }
+  }
+
+  &__screen--start &__wallet,
+  &__screen--start &__icon-btn {
+    position: relative;
+    margin: 0;
+    padding: 0;
+    border-radius: k(14);
+    background: none 0 0 / 100% 100% no-repeat;
+    box-shadow: none;
+    container-type: size;
+    filter: drop-shadow(0 k(2) k(3) rgba(10, 30, 70, .25));
+    @include transition(.12s, transform, filter);
+
+    &:active {
+      transform: translateY(#{k(2)}) scale(.97);
+    }
+  }
+
+  &__screen--start &__wallet {
+    width: k(197);
+    height: k(67);
+    background-image: url('../img/ui-wallet.webp');
+
+    // число монет — между монетой и плюсом
+    span {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 37.6%;
+      width: 36.5%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      font-size: 40cqh;
+      font-weight: 900;
+      color: #fff;
+      text-shadow: 0 .05em 0 rgba(0, 0, 0, .55);
+    }
+  }
+
+  &__screen--start &__icon-btn {
+    width: k(64);
+    height: k(65);
+
+    &--cart { background-image: url('../img/ui-cart.webp'); }
+    &--quests { background-image: url('../img/ui-quests.webp'); }
+
+    &--gear {
+      width: k(56);
+      height: k(56);
+      background-image: url('../img/ui-gear.webp');
+    }
+  }
+
+  // значок «сколько заданий выполнено» — красный кружок в белой кайме, как «3» на макете
+  &__screen--start &__badge {
+    top: 6%;
+    left: 86%;
+    right: auto;
+    min-width: 40cqh;
+    height: 40cqh;
+    padding: 0 8cqh;
+    border-radius: 20cqh;
+    font-size: 27cqh;
+    line-height: 40cqh;
+    background: radial-gradient(circle at 40% 35%, #ff6a5e 0%, #e3262c 70%, #b9161f 100%);
+    box-shadow: 0 0 0 4cqh #fff, 0 4cqh 6cqh rgba(0, 0, 0, .3);
+    translate: -50% -50%;
+  }
+
+  // ----- логотип — картинка из макета (место: 486, 7, 517×233 — по середине кадра) -----
+  &__logo {
+    --k: calc(var(--u) * .164);
+    position: absolute;
+    top: max(#{u(15)}, calc(env(safe-area-inset-top) + #{u(12)}));
+    left: 50%;
+    width: k(517);
+    height: k(233);
+    background: url('../img/logo.webp') 0 0 / 100% 100% no-repeat;
+    transform: translateX(-50%);
+    filter: drop-shadow(0 k(6) k(8) rgba(10, 30, 70, .25));
+  }
+
+  // ----- меню: кнопки — плашки из макета; подпись с 34% ширины (после медальона), по высоте — посередине -----
+  &__menu {
+    --k: calc(var(--u) * .315);
+    position: absolute;
+    left: 50%;
+    bottom: max(#{u(4)}, calc(env(safe-area-inset-bottom) + #{u(2)}));
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    width: k(254);
+    transform: translateX(-50%);
+  }
+
+  &__mbtn {
+    position: relative;
+    display: block;
+    flex: none;
+    width: k(253);
+    height: k(76);
+    padding: 0;
+    background: none 0 0 / 100% 100% no-repeat;
+    container-type: size;
+    font-family: $font;
+    font-weight: 900;
+    color: #fff;
+    pointer-events: auto;
+    @include transition(.12s, transform, filter);
+
+    @include pointer {
+      filter: brightness(1.1);
+    }
+
+    &:active {
+      transform: translateY(#{k(2)}) scale(.98);
+    }
+
+    span {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 34%;
+      right: 9%;
+      display: flex;
+      align-items: center;
+      font-size: 34cqh;
+      line-height: 1;
+      white-space: nowrap;
+      text-shadow: 0 .06em 0 rgba(0, 0, 0, .55), 0 0 .2em rgba(0, 0, 0, .25);
+    }
+
+    &--looks { background-image: url('../img/ui-btn-chars.webp'); }
+    &--levels { width: k(251); height: k(77); background-image: url('../img/ui-btn-levels.webp'); }
+    &--codex { width: k(251); background-image: url('../img/ui-btn-codex.webp'); }
+  }
+
+  // новые записи справочника — кружок на медальоне кнопки
+  &__screen--start &__mbtn--codex &__badge {
+    top: 18%;
+    left: 29%;
+  }
+
+  // звёзды похода — мелко за словом «Уровни»
+  &__mbtn-sub {
+    position: absolute;
+    right: 14%;
+    top: 50%;
+    font-size: 22cqh;
+    color: #ffd34a;
+    text-shadow: 0 .06em 0 rgba(0, 0, 0, .55);
+    translate: 0 -50%;
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  // «Играть» — золотисто-оранжевая плашка со скрещёнными мечами
+  &__mbtn--play {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 254 / 82;
+    background-image: url('../img/ui-play.webp');
+
+    span {
+      font-size: 38cqh;
+      text-shadow: 0 .06em 0 #9c4a05, 0 0 .18em rgba(156, 74, 5, .55);
+    }
+  }
+
+  // режим забега — тёмная дощечка в цвет плашек (экран нажатия пропускает — переключателю их вернуть)
+  // ширина постоянная (на любом языке переключатель один и тот же), сегменты делят её поровну сверх длины слова
+  &__menu .game__modes {
+    pointer-events: auto;
+    width: 86%;
+    margin: u(2.2) auto;
+    padding: u(.7);
+    border: u(.5) solid $rim;
+    background: $wood;
+    box-shadow: 0 0 0 u(.4) #2a211b, 0 u(1) u(2) rgba(0, 0, 0, .3);
+
+    button {
+      flex: 1 1 auto;
+      min-width: 0;
+      padding-left: 0;
+      padding-right: 0;
+      color: #f4e4c8;
+      white-space: nowrap;
+
+      &.is-on {
+        color: #4a2706;
+      }
+    }
+  }
+
+  // телефон: «Облик · Уровни · Настройки» — медальоны из макета на тёмных дощечках, подпись снизу
+  &__menu-row {
+    display: flex;
+    gap: u(2);
+
+    .game__mbtn {
+      flex: 1;
+      width: auto;
+      height: u(21);
+      border: u(.5) solid $rim;
+      border-radius: u(3.4);
+      background: $wood;
+      box-shadow: 0 0 0 u(.4) #2a211b, inset 0 u(.6) 0 rgba(255, 255, 255, .1), 0 u(1) u(2) rgba(0, 0, 0, .3);
+      container-type: normal;
+
+      &::before {
+        content: '';
+        position: absolute;
+        top: u(1.4);
+        left: 50%;
+        width: u(12.6);
+        height: u(12.6);
+        background: none 0 0 / 100% 100% no-repeat;
+        translate: -50% 0;
+      }
+
+      span {
+        top: auto;
+        left: 0;
+        right: 0;
+        bottom: u(1.4);
+        justify-content: center;
+        font-size: u(3.7);
+      }
+    }
+
+    .game__mbtn--looks::before { background-image: url('../img/ui-med-chars.webp'); }
+    .game__mbtn--levels::before { background-image: url('../img/ui-med-levels.webp'); }
+    .game__mbtn--codex::before { background-image: url('../img/ui-med-codex.webp'); }
+
+    // кружок новых записей — у медальона справа сверху (размеры свои: у дощечки нет контейнера размеров)
+    .game__mbtn--codex .game__badge {
+      top: u(2.2);
+      left: calc(50% + #{u(5.6)});
+      min-width: u(5.4);
+      height: u(5.4);
+      padding: 0 u(1.2);
+      border-radius: u(2.7);
+      font-size: u(3.4);
+      line-height: u(5.4);
+      box-shadow: 0 0 0 u(.6) #fff, 0 u(.5) u(1) rgba(0, 0, 0, .3);
+    }
+
+    .game__mbtn-sub {
+      top: u(.6);
+      right: u(1);
+      font-size: u(3);
+      translate: none;
+    }
+  }
+
+  // ----- карточка похода: на телефоне — полоса над «Играть»: картинка, бирка и мир, награды, кнопка-лапка -----
+  &__qcard {
+    position: absolute;
+    left: 50%;
+    bottom: calc(max(#{u(4)}, calc(env(safe-area-inset-bottom) + #{u(2)})) + #{u(25.6 + 2.2 + 9 + 2.2 + 21 + 2.6)});
+    display: grid;
+    grid-template-columns: u(22) minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: u(2.4);
+    align-items: center;
+    width: u(86);
+    padding: u(1);
+    // рамка из макета: углы — металл, стороны — дерево, середина — пергамент
+    border: u(3.2) solid transparent;
+    border-image: url('../img/ui-card.webp') 68 fill / u(3.2) stretch;
+    color: $c-text;
+    transform: translateX(-50%);
+    pointer-events: auto;
+  }
+
+  &__qcard-tag {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: start;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: u(4.8);
+    aspect-ratio: 88 / 32;
+    background: url('../img/ui-card-tag.webp') 0 0 / 100% 100% no-repeat;
+    font-size: u(3);
+    font-weight: 900;
+    color: #f6e7c4;
+  }
+
+  &__qcard-title {
+    grid-column: 2;
+    grid-row: 1;
+    margin-left: u(14.6);
+    font-size: u(3.7);
+    font-weight: 900;
+    color: #3b2412;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__qcard-pic {
+    grid-column: 1;
+    grid-row: 1 / 3;
+    height: u(14.6);
+    border-radius: u(2);
+    background: #8fc0ea url('../img/quest-castle.jpg') 50% 45% / cover no-repeat;
+    box-shadow: inset 0 0 0 u(.5) rgba(255, 255, 255, .75), 0 u(.4) u(1) rgba(0, 0, 0, .2);
+  }
+
+  &__qcard-text,
+  &__qcard-head {
+    display: none;
+  }
+
+  &__qcard-rewards {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    gap: u(2.4);
+    margin-top: u(1);
+  }
+
+  &__reward {
+    display: flex;
+    align-items: center;
+    font-size: u(3.6);
+    font-weight: 900;
+    color: #4a2a12;
+    white-space: nowrap;
+
+    b:empty {
+      display: none;
+    }
+  }
+
+  // монета — с карточки макета
+  &__reward-coin {
+    flex: none;
+    width: u(5);
+    height: u(5);
+    margin-right: u(.8);
+    background: url('../img/ui-coin.webp') 0 0 / 100% 100% no-repeat;
+  }
+
+  &__reward-star {
+    margin-right: u(.6);
+    font-style: normal;
+    font-size: u(4.6);
+    line-height: 1;
+    color: #f2a01e;
+    text-shadow: 0 u(.4) 0 #a8640c;
+  }
+
+  &__reward-flag svg {
+    display: block;
+    width: u(4.4);
+    height: u(4.4);
+    margin-right: u(.6);
+    fill: #c0392b;
+  }
+
+  // кнопка уровня: на телефоне — круглая жёлтая с лапкой (в цвет кнопки карточки макета)
+  &__qcard &__qcard-play {
+    grid-column: 3;
+    grid-row: 1 / 3;
+    width: u(13);
+    height: u(13);
+    padding: 0;
+    border-radius: 50%;
+    background: linear-gradient(180deg, #ffe37a 0%, #ffcb3a 50%, #f5a91e 100%);
+    box-shadow: 0 u(1) 0 #b8690b, inset 0 0 0 u(.5) #c98612, inset 0 u(.6) 0 rgba(255, 255, 255, .6);
+
+    svg {
+      width: u(6.6);
+      height: u(6.6);
+      margin: 0;
+      fill: #6b3a0c;
+    }
+
+    span {
+      display: none;
+    }
+  }
+
+  &__qcard-rewards .game__reward:last-child {
+    display: none; // длина уровня — только на широком экране
+  }
+
+  // ----- прогресс похода — на широком экране слева внизу; рекорд — справа внизу (на телефоне — под логотипом) -----
+  // прогресс: мордочка кота — на плашке; подпись, полоса и число — на местах стёртых надписей макета
+  &__progress {
+    --k: calc(var(--u) * .3);
+    position: absolute;
+    display: none;
+    width: k(305);
+    height: k(85);
+    background: url('../img/ui-progress.webp') 0 0 / 100% 100% no-repeat;
+    container-type: size;
+
+    b {
+      position: absolute;
+      left: 77.7%;
+      width: 18%;
+      top: 50.6%;
+      height: 18.8%;
+      display: flex;
+      align-items: center;
+      font-size: 21cqh;
+      font-weight: 900;
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+  }
+
+  &__progress-body {
+    span {
+      position: absolute;
+      left: 30.2%;
+      top: 22%;
+      font-size: 17cqh;
+      line-height: 1;
+      color: #f6ead6;
+      white-space: nowrap;
+    }
+  }
+
+  &__progress-bar {
+    position: absolute;
+    left: 30.2%;
+    width: 44.6%;
+    top: 49%;
+    height: 21%;
+    border-radius: 99px;
+    background: #1c1410;
+    box-shadow: inset 0 .2em .3em rgba(0, 0, 0, .55), 0 .1em 0 rgba(255, 255, 255, .08);
+    overflow: hidden;
+
+    i {
+      display: block;
+      height: 100%;
+      border-radius: 99px;
+      background: linear-gradient(180deg, #ffe680 0%, #ffc531 55%, #ef9a12 100%);
+      box-shadow: inset 0 .15em 0 rgba(255, 255, 255, .45);
+    }
+  }
+
+  // рекорд: плашка-«пилюля» с короной из макета; середина тянется под длину надписи
+  &__best {
+    --k: calc(var(--u) * .2);
+    position: absolute;
+    top: max(#{u(60)}, calc(env(safe-area-inset-top) + #{u(57)}));
+    left: 50%;
+    display: flex;
+    align-items: center;
+    height: k(44);
+    min-width: k(181);
+    padding: 0 k(6) 0 k(2);
+    border-style: solid;
+    border-width: 0 k(22) 0 k(46);
+    border-image: url('../img/ui-best.webp') 0 44 0 92 fill / 0 k(22) 0 k(46) stretch;
+    font-size: k(17);
+    font-weight: 900;
+    white-space: nowrap;
+    transform: translateX(-50%);
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  &__start-note {
+    display: none;
+  }
+
+  &.is-nogl &__start-note { // без WebGL — объяснение вместо меню
+    position: absolute;
+    left: 50%;
+    bottom: u(30);
+    display: block;
+    width: u(84);
+    padding: u(3) u(4);
+    border-radius: u(4);
+    background: $c-pill;
+    font-size: u(4.2);
+    text-align: center;
+    transform: translateX(-50%);
+  }
+
+  &.is-nogl &__menu,
+  &.is-nogl &__qcard {
+    display: none;
+  }
+
+  // ===== широкий экран — как на макете: всё в пикселях макета, --k — по высоте экрана (ширина — не меньше 1380) =====
+  // углы привязаны к краям экрана, меню и карточка — к его середине по высоте
+  @media (min-aspect-ratio: 21/20) {
+    &__menu-bg {
+      background: #6fb2ee;
+
+      &::after {
+        display: none;
+      }
+    }
+
+    // кадр «по cover» с запасом 4% на параллакс; по ширине — фокус 46% (кот — левее середины, как на макете)
+    &__mstage {
+      top: calc((100vh - max(104vh, 51.237vw)) * .5);
+      left: calc((100vw - max(104vw, 211.1vh)) * .46);
+      width: max(104vw, 211.1vh);
+      height: auto;
+    }
+
+    &__misle {
+      -webkit-mask-image: none;
+      mask-image: none;
+    }
+
+    &__screen--start {
+      --k: min(.13532vh, .07246vw);
+    }
+
+    &__screen--start &__corner {
+      --k: inherit;
+      top: max(#{k(14)}, env(safe-area-inset-top));
+
+      &--left { left: max(#{k(25)}, env(safe-area-inset-left)); }
+      &--right { right: max(#{k(15)}, env(safe-area-inset-right)); top: max(#{k(16)}, env(safe-area-inset-top)); }
+    }
+
+    &__screen--start &__icon-btn {
+      margin-top: k(2);
+    }
+
+    &__logo {
+      --k: inherit;
+      top: max(#{k(7)}, env(safe-area-inset-top));
+    }
+
+    // меню: «Играть» 142…224, дальше плашки через 10 px; режим — под ними
+    &__menu {
+      --k: inherit;
+      left: max(#{k(25)}, env(safe-area-inset-left));
+      top: calc(50% + #{k(142 - 369.5)});
+      bottom: auto;
+      width: k(254);
+      transform: none;
+    }
+
+    &__mbtn--play {
+      height: k(82);
+    }
+
+    &__menu .game__modes {
+      order: 3;
+      width: k(250);
+      margin: k(22) 0 0 k(2);
+      padding: k(4);
+      border-width: k(2.5);
+      box-shadow: 0 0 0 k(2) #2a211b, 0 k(4) k(8) rgba(0, 0, 0, .3);
+
+      button {
+        padding: k(9) 0;
+        border-radius: k(10);
+        font-size: k(16);
+      }
+    }
+
+    &__menu-row {
+      flex-direction: column;
+      gap: k(10);
+      margin-top: k(10);
+
+      .game__mbtn {
+        flex: none;
+        width: k(253);
+        height: k(76);
+        border: 0;
+        border-radius: 0;
+        background: none 0 0 / 100% 100% no-repeat;
+        box-shadow: none;
+        container-type: size;
+
+        &::before {
+          display: none;
+        }
+
+        span {
+          top: 0;
+          bottom: 0;
+          left: 34%;
+          right: 9%;
+          justify-content: flex-start;
+          font-size: 30cqh; // самое длинное — «Справочник» — помещается до стрелки плашки
+        }
+      }
+
+      .game__mbtn--looks { background-image: url('../img/ui-btn-chars.webp'); }
+      .game__mbtn--levels { width: k(251); height: k(77); background-image: url('../img/ui-btn-levels.webp'); }
+      .game__mbtn--codex { width: k(251); background-image: url('../img/ui-btn-codex.webp'); }
+
+      .game__mbtn--codex .game__badge {
+        top: 18%;
+        left: 29%;
+        min-width: 40cqh;
+        height: 40cqh;
+        padding: 0 8cqh;
+        border-radius: 20cqh;
+        font-size: 27cqh;
+        line-height: 40cqh;
+        box-shadow: 0 0 0 4cqh #fff, 0 4cqh 6cqh rgba(0, 0, 0, .3);
+      }
+
+      .game__mbtn-sub {
+        top: 50%;
+        right: 14%;
+        font-size: 22cqh;
+        translate: 0 -50%;
+      }
+    }
+
+    // карточка похода: место на макете — 1089, 104, 371×537; всё внутри — в долях карточки (cqw, проценты)
+    &__qcard {
+      left: auto;
+      right: max(#{k(40)}, env(safe-area-inset-right));
+      top: calc(50% + #{k(104 - 369.5)});
+      bottom: auto;
+      display: block;
+      width: k(371);
+      height: k(537);
+      padding: 0;
+      border: 0;
+      border-image: none;
+      background: url('../img/ui-card.webp') 0 0 / 100% 100% no-repeat;
+      container-type: size;
+      text-align: center;
+      transform: none;
+    }
+
+    &__qcard-tag {
+      position: absolute;
+      left: 36.39%;
+      top: -2.42%;
+      width: 23.72%;
+      height: 5.96%;
+      font-size: 4.9cqw;
+    }
+
+    &__qcard-title {
+      position: absolute;
+      left: 6%;
+      right: 6%;
+      top: 8.85%;
+      margin: 0;
+      font-size: 7cqw;
+      line-height: 1;
+      color: #2f1d10;
+      transform: translateY(-50%);
+    }
+
+    &__qcard-pic {
+      position: absolute;
+      left: 9.7%;
+      top: 13.41%;
+      width: 80.86%;
+      height: 35.01%;
+      border-radius: 3cqw;
+      box-shadow: inset 0 0 0 .7cqw rgba(255, 255, 255, .85), 0 0 0 .3cqw #d8b47e, 0 .8cqw 2cqw rgba(60, 30, 0, .25);
+    }
+
+    &__qcard-text {
+      position: absolute;
+      left: 11.9%;
+      right: 11.9%;
+      top: 51.2%;
+      display: block;
+      margin: 0;
+      font-size: 4.3cqw;
+      font-weight: 600;
+      line-height: 1.2;
+      text-align: left;
+      color: #4f3e31;
+    }
+
+    // «Награды» на разделителе из макета: слово — в промежутке между ромбиками, на уровне линии (разделитель — 8 px
+    // макета: сама линия с ромбиками)
+    &__qcard-head {
+      position: absolute;
+      left: 11.32%;
+      top: 62.01%;
+      width: 77.36%;
+      height: 1.49%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: url('../img/ui-card-div.webp') 0 0 / 100% 100% no-repeat;
+      font-size: 3.8cqw;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: .02em;
+      text-transform: uppercase;
+      color: #6b5644;
+    }
+
+    // три плитки наград: 1133…1221, 1230…1319, 1327…1415 × 453…520 макета
+    &__qcard-rewards {
+      position: absolute;
+      left: 11.86%;
+      right: 11.86%;
+      top: 65%;
+      height: 12.48%;
+      display: flex;
+      gap: 2.4cqw;
+      margin: 0;
+    }
+
+    &__reward {
+      flex: 1;
+      flex-direction: column;
+      justify-content: center;
+      border-radius: 2.4cqw;
+      background: linear-gradient(180deg, rgba(236, 216, 178, .55), rgba(226, 200, 156, .5));
+      box-shadow: inset 0 .3cqw 0 rgba(255, 255, 255, .45);
+      font-size: 3.9cqw;
+      font-weight: 900;
+      color: #3a2a1e;
+    }
+
+    &__reward-coin {
+      width: 11.5cqw;
+      height: 11.5cqw;
+      margin: 0 0 .6cqw;
+    }
+
+    &__reward-star {
+      margin: 0 0 .4cqw;
+      font-size: 10.5cqw;
+    }
+
+    &__reward-flag svg {
+      width: 10cqw;
+      height: 10cqw;
+      margin: 0 0 .4cqw;
+    }
+
+    &__qcard-rewards .game__reward:last-child {
+      display: flex;
+    }
+
+    // «Играть»: кнопка из макета (лапку с неё стёрли — ui-card-play.webp), лапка и слово — кодом, по центру
+    &__qcard &__qcard-play {
+      position: absolute;
+      left: 9.7%;
+      top: 79.7%;
+      width: 80.59%;
+      height: 13.41%;
+      border-radius: 0;
+      background: url('../img/ui-card-play.webp') 0 0 / 100% 100% no-repeat;
+      box-shadow: none;
+      font-size: 8.4cqw;
+      text-transform: none;
+      letter-spacing: 0;
+      color: #3b2008;
+
+      &:active {
+        box-shadow: none;
+      }
+
+      // лапка — кодом рядом со словом (на картинке её нет): группа по центру кнопки на любом языке
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: .32em;
+      padding-bottom: 1.2%;
+
+      svg {
+        display: block;
+        flex: none;
+        width: 1.08em;
+        height: 1.08em;
+        fill: #6b3a0c;
+      }
+
+      span {
+        position: static;
+        display: block;
+      }
+    }
+
+    &__progress {
+      --k: inherit;
+      left: max(#{k(25)}, env(safe-area-inset-left));
+      bottom: max(#{k(32)}, env(safe-area-inset-bottom));
+      display: block;
+    }
+
+    &__best {
+      --k: inherit;
+      top: auto;
+      left: auto;
+      right: max(#{k(36)}, env(safe-area-inset-right));
+      bottom: max(#{k(28)}, env(safe-area-inset-bottom));
+      transform: none;
+    }
+  }
+
+  // появление элементов меню и уход по нажатию «Играть»
+  &__screen--start {
+    .game__logo,
+    .game__menu,
+    .game__qcard,
+    .game__progress,
+    .game__best {
+      opacity: 0;
+      @include transition(.6s, opacity, translate);
+    }
+
+    .game__logo {
+      translate: 0 u(-10);
+    }
+
+    .game__menu,
+    .game__qcard {
+      translate: 0 u(14);
+    }
+  }
+
+  &.is-start &__screen--start {
+    .game__logo,
+    .game__menu,
+    .game__qcard,
+    .game__progress,
+    .game__best {
+      opacity: 1;
+      translate: 0 0;
+    }
+
+    .game__qcard {
+      transition-delay: .1s;
+    }
+  }
+
+  @media (min-aspect-ratio: 21/20) {
+    &__screen--start {
+      .game__menu {
+        translate: u(-20) 0;
+      }
+
+      .game__qcard {
+        translate: u(20) 0;
+      }
+    }
+  }
+
+  // ---------- Загрузчик: пока собирается сцена ----------
+  // Небо — та же картина, что у меню (загрузчик тает прямо в меню), снизу плывут облака, логотип парит; полоса — дерево
+  // с золотом, по ней к замку катится монетка-лапка. Анимации только на transform и opacity (и scale, translate) — их ведёт
+  // композитор, и они не замирают, пока скрипт строит мир. Полосу и монетку двигает скрипт (loaderTo): сдвигом с длительностью
+  &__loader {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+    background: linear-gradient(180deg, #2f7fdc 0%, #79b6ec 45%, #dfe9f4 100%); // пока не пришла картинка неба
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .6s ease-in-out, visibility .6s;
+  }
+
+  &.is-loading &__loader {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  &__loader-sky {
+    position: absolute;
+    top: -6%;
+    left: -6%;
+    width: 112%;
+    height: 112%;
+    background: url('../img/menu-sky.jpg') 70% 50% / cover no-repeat; // широкий экран: замок справа, шар слева
+    animation: game-loader-sky 26s ease-in-out infinite alternate;
+
+    @media (max-aspect-ratio: 1 / 1) { // телефон: за логотипом — открытое небо с островками, а не замок
+      background-position: 46% 50%;
+    }
+
+    &::after { // мягкий свет к середине и чуть темнее вверху — логотип и полоса читаются на ярком небе
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background:
+        radial-gradient(ellipse 60% 42% at 50% 47%, rgba(255, 255, 255, .28) 0%, rgba(255, 255, 255, 0) 100%),
+        linear-gradient(180deg, rgba(14, 50, 120, .32) 0%, rgba(14, 50, 120, 0) 34%);
+    }
+  }
+
+  // облачная гряда снизу: два слоя, ленты вдвое шире экрана — сдвиг на половину замыкает круг без шва
+  &__loader-clouds {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 34%;
+
+    i {
+      position: absolute;
+      left: 0;
+      bottom: 0;
+      width: 200%;
+      height: 100%;
+      background:
+        radial-gradient(ellipse 50% 46% at 50% 100%, #fff 0 62%, rgba(255, 255, 255, 0) 100%) 0 100% / 16.6667% 70% repeat-x,
+        radial-gradient(ellipse 50% 40% at 50% 100%, #fff 0 58%, rgba(255, 255, 255, 0) 100%) 3% 100% / 12.5% 100% repeat-x,
+        radial-gradient(ellipse 50% 50% at 50% 100%, #fff 0 55%, rgba(255, 255, 255, 0) 100%) 7% 100% / 25% 56% repeat-x;
+      animation: game-loader-clouds 70s linear infinite;
+    }
+
+    i:first-child { // дальний слой — выше, голубее и медленнее
+      bottom: 14%;
+      opacity: .75;
+      filter: hue-rotate(-8deg) brightness(.94);
+      animation-duration: 110s;
+      animation-direction: reverse;
+    }
+  }
+
+  &__loader-body {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding-bottom: 10vh;
+    transition: transform .6s ease-in-out;
+  }
+
+  &:not(.is-loading) &__loader-body { // уходит: чуть приближается, пока тает
+    transform: scale(1.05);
+  }
+
+  &__loader-logo {
+    width: clamp(#{u(84)}, 60vh, 90vw); // на компьютере крупнее: u там упирается в 5,2 px
+    aspect-ratio: 1034 / 466;
+    background: url('../img/logo.webp') center / contain no-repeat;
+    filter: drop-shadow(0 u(2.4) u(3) rgba(16, 40, 96, .4));
+    animation: game-loader-in .9s cubic-bezier(.2, 1.5, .4, 1) both, game-loader-float 3.4s ease-in-out .9s infinite;
+  }
+
+  &__loader-bar {
+    position: relative;
+    width: u(66);
+    height: u(9.6);
+    margin-top: u(9);
+    padding: u(1.8) u(2.2);
+    border-radius: u(5);
+    background: linear-gradient(180deg, #6e5848 0%, #54463c 45%, #3a2f27 100%);
+    box-shadow:
+      inset 0 0 0 u(.6) #806b5a,
+      inset 0 u(.8) 0 rgba(255, 236, 205, .22),
+      0 u(1.4) 0 #2a211b,
+      0 u(4) u(7) rgba(14, 32, 70, .35);
+    animation: game-loader-in .7s .25s cubic-bezier(.2, 1.4, .4, 1) both;
+  }
+
+  &__loader-track {
+    position: relative;
+    height: 100%;
+    border-radius: u(3);
+    background: #271e18;
+    box-shadow: inset 0 u(.8) u(1.4) rgba(0, 0, 0, .6);
+    overflow: hidden;
+
+    i { // золото: едет сдвигом, блик бежит по нему
+      position: relative;
+      display: block;
+      height: 100%;
+      border-radius: u(3);
+      background: linear-gradient(180deg, #fff3b0 0%, #ffd34a 46%, #f2a01e 100%);
+      box-shadow: inset 0 u(.5) 0 rgba(255, 255, 255, .7), inset 0 u(-.7) 0 rgba(170, 85, 0, .35);
+      overflow: hidden;
+      transform: translateX(-100%);
+      transition: transform .5s ease-out;
+
+      &::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(100deg, rgba(255, 255, 255, 0) 30%, rgba(255, 255, 255, .6) 46%, rgba(255, 255, 255, 0) 62%);
+        animation: game-loader-shine 1.9s ease-in-out infinite;
+      }
+    }
+  }
+
+  // монетка-лапка на краю золота: обёртка той же ширины, что дорожка, едет тем же сдвигом, но не обрезана
+  &__loader-ride {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: u(2.2);
+    right: u(2.2);
+    transform: translateX(-100%);
+    transition: transform .5s ease-out;
+  }
+
+  &__loader-coin {
+    position: absolute;
+    top: 50%;
+    right: 0;
+    width: u(11);
+    height: u(11);
+    margin: 0;
+    border-width: u(.7);
+    translate: 50% -50%;
+    box-shadow: inset 0 u(-.7) 0 rgba(150, 85, 0, .45), inset 0 u(.6) 0 rgba(255, 255, 255, .55), 0 u(.8) u(1.6) rgba(30, 15, 0, .45);
+    animation: game-loader-roll 1.4s linear infinite; // катится по золоту, лапкой то вверх, то вниз
+  }
+
+  // замок в конце дороги — к нему и катится монетка; флаг на шпиле вьётся
+  &__loader-goal {
+    position: absolute;
+    right: u(-4.6);
+    bottom: u(2);
+    width: u(14);
+    height: u(14);
+    overflow: visible;
+    filter: drop-shadow(0 u(.8) u(1) rgba(20, 12, 4, .5));
+  }
+
+  &__loader-stone {
+    fill: #f4e6c8;
+    stroke: #8a5c32;
+    stroke-width: 1.2;
+    stroke-linejoin: round;
+  }
+
+  &__loader-roof {
+    fill: #3d6fd8;
+    stroke: #213f86;
+    stroke-width: 1;
+    stroke-linejoin: round;
+  }
+
+  &__loader-gate {
+    fill: #6b4321;
+  }
+
+  &__loader-flag {
+    fill: $c-red;
+    transform-box: fill-box;
+    transform-origin: 0 50%;
+    animation: game-loader-flag .9s ease-in-out infinite;
+  }
+
+  &__loader-text {
+    margin-top: u(3.6);
+    font-size: u(4.4);
+    font-weight: 900;
+    letter-spacing: u(.8);
+    text-transform: uppercase;
+    color: #fff;
+    text-shadow: 0 u(.5) 0 rgba(30, 50, 100, .55), 0 0 u(3) rgba(20, 50, 120, .45);
+    animation: game-loader-pulse 1.6s ease-in-out infinite;
+  }
+
+  // совет из кампании — внизу, над облаками
+  &__loader-tip {
+    position: absolute;
+    left: 50%;
+    bottom: calc(#{u(9)} + env(safe-area-inset-bottom));
+    width: max-content;
+    max-width: calc(100% - #{u(12)});
+    padding: u(2.4) u(4.4) u(2.2);
+    border-radius: u(5);
+    background: rgba(48, 36, 30, .72);
+    box-shadow: inset 0 0 0 u(.4) rgba(255, 220, 160, .18), 0 u(2) u(5) rgba(14, 32, 70, .25);
+    font-size: u(3.8);
+    font-weight: 800;
+    line-height: 1.35;
+    text-align: center;
+    color: #fff6e4;
+    translate: -50% 0;
+    animation: game-loader-tip .6s .6s ease-out both;
+
+    b {
+      margin-right: u(1.4);
+      color: $c-gold;
+      text-transform: uppercase;
+      letter-spacing: u(.4);
+    }
+
+    &:empty {
+      display: none;
+    }
+  }
+
+  // ---------- Карточка паузы и финала ----------
+  &__card {
+    width: 100%;
+    max-width: u(88);
+    padding: u(6) u(6.5) u(6);
+    text-align: center;
+    color: $c-text;
+    border: u(.8) solid #8a5426;
+    border-radius: u(7);
+    background: linear-gradient(180deg, #fff9ec 0%, #f7e6c7 100%);
+    box-shadow: 0 u(1.6) 0 #6b3d17, 0 u(6) u(14) rgba(10, 25, 60, .35), inset 0 u(.6) 0 rgba(255, 255, 255, .9);
+  }
+
+  // награда за вход: семь плиток (4 + 3), сегодняшняя светится, взятые — с галочкой; сундук — под ними
+  &__days {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: u(1.8);
+    margin: u(3) 0;
+  }
+
+  &__day {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: u(.6);
+    padding: u(1.6) u(.6) u(1.8);
+    border-radius: u(3.4);
+    background: linear-gradient(180deg, #fffdf6 0%, #f8ecd4 100%);
+    box-shadow: inset 0 0 0 u(.5) #ecd4ad, 0 u(.6) 0 #e2c79c;
+
+    small {
+      font-size: u(2.7);
+      font-weight: 800;
+      color: #9a7a58;
+    }
+
+    b {
+      font-size: u(3.2);
+      font-weight: 900;
+      color: #4a2a12;
+      line-height: 1.1;
+    }
+
+    .game__coin {
+      width: u(8);
+      height: u(8);
+      margin: 0;
+    }
+
+    &.is-big { // день 7 — большой сундук в конце, на две клетки
+      grid-column: span 2;
+    }
+
+    &.is-today {
+      background: linear-gradient(180deg, #ffe88f 0%, #ffd357 50%, #f8b42d 100%);
+      box-shadow: 0 u(.8) 0 #d58b1c, inset 0 u(.4) 0 rgba(255, 255, 255, .7), 0 0 0 u(.6) #fff3c4, 0 0 u(4) rgba(255, 190, 60, .8);
+      animation: game-day 1.6s ease-in-out infinite;
+
+      small {
+        color: #6b3d0c;
+      }
+    }
+
+    &.is-done {
+      opacity: .55;
+
+      &::after { // галочка
+        content: '';
+        position: absolute;
+        top: u(1);
+        right: u(1.4);
+        width: u(1.6);
+        height: u(3);
+        border-right: u(.8) solid #3f9a3a;
+        border-bottom: u(.8) solid #3f9a3a;
+        transform: rotate(40deg);
+      }
+    }
+  }
+
+  // сундук кодом: сундук-коробка с окованной крышкой; на плитке — маленький
+  &__day-chest,
+  &__chest-box,
+  &__chest-lid {
+    display: block;
+    border: u(.5) solid #6b3a14;
+    background:
+      linear-gradient(90deg, transparent 44%, #f2c14e 44%, #f2c14e 56%, transparent 56%),
+      linear-gradient(180deg, #b0702c 0%, #8a5222 100%);
+    box-shadow: inset 0 u(.5) 0 rgba(255, 255, 255, .25);
+  }
+
+  &__day-chest {
+    width: u(10);
+    height: u(7.4);
+    border-radius: u(2) u(2) u(1) u(1);
+  }
+
+  &__chest {
+    position: relative;
+    display: none;
+    width: u(24);
+    height: u(20);
+    margin: u(1) auto u(2);
+
+    &.is-shown {
+      display: block;
+    }
+
+    &.is-open {
+      .game__chest-lid {
+        transform: translateY(#{u(-3)}) rotate(-28deg);
+      }
+
+      &::before {
+        opacity: 1;
+        transform: translate(-50%, -30%) scale(1.3);
+      }
+    }
+
+    // свет из открытого сундука
+    &::before {
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: 30%;
+      width: u(40);
+      height: u(40);
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255, 236, 150, .95) 0%, rgba(255, 210, 90, .5) 35%, rgba(255, 210, 90, 0) 70%);
+      opacity: 0;
+      transform: translate(-50%, -30%) scale(.4);
+      transition: opacity .5s, transform .6s;
+      pointer-events: none;
+    }
+  }
+
+  &__chest-box {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 60%;
+    border-radius: u(1) u(1) u(2.4) u(2.4);
+  }
+
+  &__chest-lid {
+    position: absolute;
+    left: u(-.6);
+    right: u(-.6);
+    top: 4%;
+    height: 40%;
+    border-radius: u(6) u(6) u(1) u(1);
+    transform-origin: 10% 100%;
+    transition: transform .45s cubic-bezier(.3, 1.6, .5, 1);
+  }
+
+  &__chest.is-shown:not(.is-open) {
+    animation: game-chest .9s ease-in-out infinite;
+  }
+
+  &__daily-got {
+    min-height: u(5);
+    margin: 0 0 u(2);
+    font-size: u(4);
+    font-weight: 900;
+    color: #b06a10;
+
+    &:empty {
+      min-height: 0;
+    }
+  }
+
+  // спасти забег: кольцо-отсчёт (conic-gradient убывает за 5 с), число секунд внутри
+  &__save-ring {
+    --p: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: u(24);
+    height: u(24);
+    margin: u(3) auto u(4);
+    border-radius: 50%;
+    background: radial-gradient(circle, #fff9ec 0 60%, transparent 61%), conic-gradient(#f2a01e calc(var(--p) * 360deg), #ead6b5 0);
+
+    b {
+      font-size: u(9);
+      font-weight: 900;
+      color: #4a2a12;
+    }
+
+    &.is-on {
+      animation: game-save 5s linear forwards;
+    }
+  }
+
+  &__save .game__btn .game__coin {
+    flex: none;
+    width: u(7);
+    height: u(7);
+    margin: -.28em u(1.4) 0; // монета — по середине плашки, не со сдвигом надписи
+  }
+
+  // забег дня: лучшие дни
+  &__top {
+    min-height: 0;
+
+    .game__item-text b {
+      font-weight: 800;
+    }
+  }
+
+  &__top-n {
+    flex: none;
+    width: u(8);
+    font-size: u(5);
+    font-weight: 900;
+    color: #c9851a;
+  }
+
+  &__top-m {
+    font-size: u(4.4);
+    font-weight: 900;
+    color: #4a2a12;
+  }
+
+  &__card-title {
+    font-size: u(10);
+    font-weight: 900;
+    line-height: 1.1;
+    color: $c-ink;
+    margin-bottom: u(5);
+  }
+
+  &__text {
+    margin: 0 0 u(5);
+    font-size: u(4.5);
+    font-weight: 800;
+    line-height: 1.4;
+
+    &--small {
+      margin: u(4) 0 u(5);
+      font-size: u(4);
+      color: $c-muted;
+
+      &:empty {
+        display: none;
+      }
+    }
+  }
+
+  &__btn {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: u(16);
+    // заглавные Nunito сидят выше середины строки — сверху отступ, и надпись встаёт на середину плашки; по бокам воздух.
+    // Подпись всегда в одну строку: длинную (другой язык) ужимает fitText
+    padding: .28em u(3) 0;
+    white-space: nowrap;
+    border-radius: u(5);
+    font-family: $font;
+    font-size: u(7);
+    font-weight: 900;
+    letter-spacing: u(.3);
+    text-transform: uppercase;
+    color: #4a2706;
+    background: linear-gradient(180deg, #ffe27a 0%, #ffc93c 45%, #f5a623 100%);
+    box-shadow: 0 u(1.6) 0 #b8690b, 0 u(3) u(5) rgba(120, 60, 0, .3), inset 0 u(.6) 0 rgba(255, 255, 255, .7);
+    @include transition(.12s, transform, box-shadow, filter);
+
+    @include pointer {
+      filter: brightness(1.06);
+    }
+
+    &:active {
+      transform: translateY(#{u(1)});
+      box-shadow: 0 u(.6) 0 #b8690b, 0 u(1.4) u(3) rgba(120, 60, 0, .3), inset 0 u(.6) 0 rgba(255, 255, 255, .7);
+    }
+
+    &--ghost {
+      height: u(13);
+      font-size: u(4.8);
+      color: $c-text;
+      background: #fffdf8;
+      box-shadow: 0 u(1.2) 0 #d0ab78, inset 0 0 0 u(.5) #e3c79c;
+
+      &:active {
+        box-shadow: 0 u(.4) 0 #d0ab78, inset 0 0 0 u(.5) #e3c79c;
+      }
+    }
+  }
+
+  // кнопки столбиком в карточке — с зазором под объёмным краем (в ряду зазор свой, слева)
+  &__card &__btn + &__btn {
+    margin-top: u(3.4);
+  }
+
+  &.is-start #game-play,
+  &.is-over #game-again,
+  &.is-win #game-next {
+    animation: game-pulse 1.6s ease-in-out infinite;
+  }
+
+  // ---------- Кампания: кнопка на заставке, «Карта» в паузе и финале (только в уровне) ----------
+  &__quest {
+    margin-top: u(3);
+
+    b {
+      margin-left: u(2);
+      color: #c98612;
+
+      &:empty {
+        display: none;
+      }
+    }
+  }
+
+  &__to-map {
+    display: none;
+    margin-top: u(3);
+  }
+
+  &.is-campaign &__to-map {
+    display: flex;
+  }
+
+  &.is-campaign &__link {
+    display: none;
+  }
+
+  // карта: миры сверху вниз, в каждом — уровни-медальоны со звёздами
+  &__map {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: u(96);
+    max-height: 100%;
+    color: $c-text;
+    border: u(.8) solid #8a5426;
+    border-radius: u(7);
+    background: linear-gradient(180deg, #fff9ec 0%, #f7e6c7 100%);
+    box-shadow: 0 u(1.6) 0 #6b3d17, 0 u(6) u(14) rgba(10, 25, 60, .35);
+    overflow: hidden;
+    pointer-events: auto;
+  }
+
+  &__map-head {
+    flex: none;
+    display: flex;
+    align-items: center;
+    padding: u(3.4) u(4);
+    border-bottom: u(.5) solid #e3c79c;
+  }
+
+  &__back {
+    flex: none;
+    width: u(10);
+    height: u(10);
+    margin-right: u(3);
+    border-radius: 50%;
+    background: #fffdf8;
+    box-shadow: 0 u(.8) 0 #d0ab78, inset 0 0 0 u(.5) #e3c79c;
+
+    &::before {
+      content: '';
+      display: block;
+      width: u(2.6);
+      height: u(2.6);
+      margin-left: u(4);
+      border-left: u(.9) solid $c-ink;
+      border-bottom: u(.9) solid $c-ink;
+      transform: rotate(45deg);
+    }
+  }
+
+  &__map-title {
+    flex: 1;
+    font-size: u(5.2);
+    font-weight: 900;
+    line-height: 1.15;
+    color: $c-ink;
+  }
+
+  &__map-stars {
+    flex: none;
+    margin-left: u(2);
+    font-size: u(4.2);
+    font-weight: 900;
+    color: #c98612;
+  }
+
+  // справочник: снимок модели слева, имя и как с этим быть; до встречи — силуэт
+  &__cx {
+    align-items: flex-start;
+
+    small {
+      display: block;
+      margin-top: u(.6);
+      line-height: 1.3;
+      white-space: normal;
+    }
+  }
+
+  &__cx-pic {
+    flex: none;
+    width: u(17);
+    height: u(17);
+    margin-right: u(2.8);
+    border-radius: u(3.6);
+    background: radial-gradient(circle at 50% 42%, #fffaf0 0%, #f6e6c8 62%, #ead3ac 100%);
+    box-shadow: inset 0 0 0 u(.5) #e2c79c, 0 u(.6) 0 rgba(120, 80, 30, .14);
+    overflow: hidden;
+
+    img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    img:not([src]) {
+      visibility: hidden;
+    }
+  }
+
+  &__cx.is-locked {
+    b {
+      color: #a3907a;
+    }
+
+    img {
+      filter: brightness(0) opacity(.32);
+    }
+  }
+
+  &__cx-new {
+    display: inline-block;
+    margin-left: u(1);
+    padding: u(.3) u(1.4);
+    border-radius: u(2);
+    background: -red;
+    color: #fff;
+    font-size: u(2.6);
+    font-style: normal;
+    vertical-align: middle;
+  }
+
+  &__worlds {
+    flex: 1;
+    overflow-y: auto;
+    padding: u(2) u(3.4) u(4);
+    -webkit-overflow-scrolling: touch;
+  }
+
+  &__world {
+    margin-top: u(3);
+    border-radius: u(5);
+    background: #fffdf8;
+    box-shadow: inset 0 0 0 u(.5) #ead2ad;
+    overflow: hidden;
+
+    &.is-locked {
+      opacity: .55;
+    }
+  }
+
+  &__world-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: u(2.2) u(3.4);
+    font-size: u(4.4);
+    color: #fff;
+    text-shadow: 0 u(.4) 0 rgba(0, 0, 0, .3);
+
+    span {
+      font-weight: 900;
+    }
+  }
+
+  &__world--sky &__world-head { background: linear-gradient(90deg, #4f9fe6, #8fd0ff); }
+  &__world--ice &__world-head { background: linear-gradient(90deg, #7fbfe8, #d2efff); color: #2d5578; text-shadow: none; }
+  &__world--fire &__world-head { background: linear-gradient(90deg, #d1522b, #ffab5e); }
+  &__world--ghost &__world-head { background: linear-gradient(90deg, #4b4592, #9b8fe0); }
+  &__world--citadel &__world-head { background: linear-gradient(90deg, #8a4a6a, #e3a07a); }
+
+  &__levels {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    padding: u(2.6) u(2.6) u(1.4);
+  }
+
+  &__level {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 13%;
+    margin-bottom: u(1.6);
+    font-family: $font;
+
+    b {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: u(10);
+      height: u(10);
+      border-radius: 50%;
+      font-size: u(4.6);
+      font-weight: 900;
+      color: #4a2706;
+      background: linear-gradient(180deg, #ffe27a 0%, #ffc93c 45%, #f5a623 100%);
+      box-shadow: 0 u(.8) 0 #b8690b;
+    }
+
+    i {
+      margin-top: u(.6);
+      font-size: u(2.8);
+      font-style: normal;
+      letter-spacing: u(-.2);
+      color: #f2a01e;
+      white-space: nowrap;
+
+      em {
+        font-style: normal;
+        color: #e3cfae;
+      }
+    }
+
+    &.is-boss b {
+      font-size: u(2.8);
+      color: #fff;
+      background: linear-gradient(180deg, #ff7a5c 0%, #c21d2b 100%);
+      box-shadow: 0 u(.8) 0 #7a1018;
+    }
+
+    &.is-locked b {
+      color: #b9a487;
+      background: #efe2cb;
+      box-shadow: 0 u(.8) 0 #d8c3a1;
+    }
+  }
+
+  // уровень пройден: три звезды — заработанные вспыхивают золотом по очереди
+  &__win-stars {
+    display: flex;
+    justify-content: center;
+    margin: u(-1) 0 u(1);
+  }
+
+  &__win-star {
+    width: u(15);
+    height: u(15);
+    margin: 0 u(1);
+    fill: #e8d7bb;
+    stroke: #c9ab7e;
+    stroke-width: 1;
+
+    &:nth-child(2) {
+      margin-top: u(-3);
+    }
+
+    &.is-on {
+      fill: #ffc93c;
+      stroke: #b8690b;
+      filter: drop-shadow(0 u(.8) 0 rgba(150, 85, 0, .45));
+    }
+  }
+
+  &.is-win &__win-star.is-on {
+    animation: game-star .5s ease-out both;
+
+    &:nth-child(2) { animation-delay: .25s; }
+    &:nth-child(3) { animation-delay: .5s; }
+  }
+
+  &__row {
+    display: flex;
+    margin-top: u(4);
+
+    .game__btn + .game__btn {
+      margin-top: 0;
+      margin-left: u(3);
+    }
+  }
+
+  &__sound {
+    svg {
+      width: u(6.4);
+      height: u(6.4);
+      margin: -.28em u(1.6) 0 0; // значок — по середине плашки, не со сдвигом надписи
+      fill: $c-text;
+      stroke: $c-text;
+      stroke-width: 0;
+    }
+
+    .game__sound-off {
+      display: none;
+    }
+
+    &.is-muted {
+      color: $c-muted;
+
+      .game__sound-on {
+        display: none;
+      }
+
+      .game__sound-off {
+        display: block;
+        fill: $c-muted;
+        stroke: $c-muted;
+      }
+    }
+  }
+
+  &__link {
+    display: block;
+    margin: u(5) auto 0;
+    font-family: $font;
+    font-size: u(4.4);
+    font-weight: 800;
+    color: $c-muted;
+    text-decoration: underline;
+    text-underline-offset: u(1);
+    @include transition(.2s, color);
+
+    @include pointer {
+      color: $c-ink;
+    }
+  }
+
+  &.no-cta &__link {
+    display: none;
+  }
+
+  &__record {
+    display: none;
+    width: max-content;
+    margin: u(-2) auto u(4);
+    padding: u(1.2) u(4);
+    border-radius: u(4);
+    font-size: u(4.6);
+    font-weight: 900;
+    color: #4a2706;
+    background: linear-gradient(180deg, #ffe27a, #f5a623);
+    box-shadow: 0 u(.8) 0 #b8690b;
+    transform: rotate(-3deg);
+  }
+
+  &.is-record &__record {
+    display: block;
+    animation: game-record .6s ease-out backwards .25s;
+  }
+
+  &__stats {
+    display: flex;
+    justify-content: center;
+  }
+
+  &__stat {
+    flex: 1;
+    padding: u(3) 0;
+    border-radius: u(4);
+    background: rgba(139, 84, 38, .08);
+
+    & + & {
+      margin-left: u(3);
+    }
+
+    b {
+      display: block;
+      font-size: u(12);
+      font-weight: 900;
+      line-height: 1;
+      color: $c-ink;
+      font-variant-numeric: tabular-nums;
+    }
+
+    span {
+      display: block;
+      margin-top: u(1.4);
+      font-size: u(3.6);
+      text-transform: uppercase;
+      letter-spacing: u(.2);
+      color: $c-muted;
+    }
+  }
+}
+
+@keyframes game-heart-lose {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.5) rotate(-12deg); }
+  100% { transform: scale(1); }
+}
+
+@property --p {
+  syntax: '<number>';
+  inherits: true;
+  initial-value: 1;
+}
+
+@keyframes game-save {
+  from { --p: 1; }
+  to { --p: 0; }
+}
+
+@keyframes game-day {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@keyframes game-chest {
+  0%, 100% { transform: rotate(0deg); }
+  20% { transform: rotate(-4deg); }
+  40% { transform: rotate(4deg); }
+  60% { transform: rotate(0deg); }
+}
+
+@keyframes game-wipe {
+  0% { opacity: 0; transform: scale(.3); }
+  35% { opacity: 1; transform: scale(1.6); }
+  100% { opacity: 0; transform: scale(2.6); }
+}
+
+@keyframes game-speed {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(2.4deg); }
+}
+
+@keyframes game-heart-gain {
+  0% { transform: scale(.4); filter: drop-shadow(0 0 0 rgba(255, 120, 140, 0)); }
+  40% { transform: scale(1.6); filter: drop-shadow(0 0 6px rgba(255, 120, 140, .9)); }
+  100% { transform: scale(1); }
+}
+
+@keyframes game-pop {
+  0% { opacity: 0; transform: translate(-50%, -60%) scale(.6); }
+  15% { opacity: 1; transform: translate(-50%, -100%) scale(1.12); }
+  30% { opacity: 1; transform: translate(-50%, -100%) scale(1); }
+  100% { opacity: 0; transform: translate(-50%, -260%) scale(1); }
+}
+
+@keyframes game-pad-glow {
+  0%, 100% { box-shadow: inset 0 0 0 u(.8) rgba(255, 255, 255, .55), 0 0 0 0 rgba(255, 201, 60, .8); }
+  50% { box-shadow: inset 0 0 0 u(.8) rgba(255, 255, 255, .55), 0 0 0 u(3) rgba(255, 201, 60, 0); }
+}
+
+@keyframes game-coach-steer {
+  0%, 100% { transform: translateX(#{u(-9)}); }
+  50% { transform: translateX(#{u(9)}); }
+}
+
+@keyframes game-coach-tap {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(.7); }
+}
+
+@keyframes game-coach-swipe {
+  0% { transform: translateY(#{u(6)}); opacity: 0; }
+  20% { opacity: 1; }
+  80% { transform: translateY(#{u(-12)}); opacity: 1; }
+  100% { transform: translateY(#{u(-14)}); opacity: 0; }
+}
+
+@keyframes game-star {
+  0% { transform: scale(0) rotate(-40deg); }
+  70% { transform: scale(1.25) rotate(8deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+@keyframes game-boss-hit {
+  0% { filter: brightness(3); }
+  100% { filter: brightness(1); }
+}
+
+@keyframes game-fury {
+  0%, 100% { opacity: .75; }
+  50% { opacity: 1; }
+}
+
+@keyframes game-combo-break {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(#{u(-1.6)}); }
+  75% { transform: translateX(#{u(1.6)}); }
+}
+
+@keyframes game-ring-break {
+  0% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+@keyframes game-rotate {
+  0%, 30% { transform: rotate(-90deg); }
+  60%, 100% { transform: rotate(0); }
+}
+
+@keyframes game-cut {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes game-mult-up {
+  0% { transform: scale(1.7) rotate(-12deg); }
+  60% { transform: scale(.9) rotate(4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+@keyframes game-coin-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.3); }
+  100% { transform: scale(1); }
+}
+
+@keyframes game-nudge-left {
+  0%, 100% { transform: translateX(0) rotate(-45deg); }
+  50% { transform: translateX(#{u(-1.6)}) rotate(-45deg); }
+}
+
+@keyframes game-nudge-right {
+  0%, 100% { transform: translateX(0) rotate(135deg); }
+  50% { transform: translateX(#{u(1.6)}) rotate(135deg); }
+}
+
+@keyframes game-tilt {
+  0%, 100% { transform: rotate(-18deg); }
+  50% { transform: rotate(18deg); }
+}
+
+@keyframes game-tilt-cat {
+  0%, 100% { transform: translateX(#{u(-1.6)}); }
+  50% { transform: translateX(#{u(1.6)}); }
+}
+
+@keyframes game-menu-drift {
+  from { scale: 1; }
+  to { scale: 1.04; }
+}
+
+@keyframes game-isle-float {
+  from { translate: 0 0; }
+  to { translate: 0 -1.6%; }
+}
+
+@keyframes game-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.035); }
+}
+
+@keyframes game-record {
+  from { opacity: 0; transform: rotate(-3deg) scale(.3); }
+}
+
+// прыжок монетки как у кота: присела при касании, взлёт с замедлением, падение с ускорением
+@keyframes game-loader-roll {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes game-loader-sky {
+  from { transform: scale(1) translateX(0); }
+  to { transform: scale(1.06) translateX(-1.6%); }
+}
+
+@keyframes game-loader-clouds {
+  to { transform: translateX(-50%); }
+}
+
+@keyframes game-loader-in {
+  from { opacity: 0; scale: .72; }
+  to { opacity: 1; scale: 1; }
+}
+
+@keyframes game-loader-float {
+  0%, 100% { translate: 0 0; }
+  50% { translate: 0 #{u(-1.8)}; }
+}
+
+@keyframes game-loader-shine {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(100%); }
+}
+
+@keyframes game-loader-flag {
+  0%, 100% { transform: skewY(0) scaleX(1); }
+  50% { transform: skewY(-10deg) scaleX(.82); }
+}
+
+@keyframes game-loader-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .62; }
+}
+
+@keyframes game-loader-tip {
+  from { opacity: 0; transform: translateY(#{u(2)}); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes game-coin-float {
+  0%, 100% { transform: translateY(0) rotate(-10deg); }
+  50% { transform: translateY(#{u(-2.4)}) rotate(10deg); }
+}
