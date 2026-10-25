@@ -6,7 +6,7 @@ _not_main/_backup/
 _not_main/check/out/
 
 # собирается: npx gulp playable → build/, компиляция pug → compile/, папка для Vercel → dist/
-build/
+
 compile/
 dist/
 
